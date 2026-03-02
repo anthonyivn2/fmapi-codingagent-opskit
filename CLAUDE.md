@@ -10,9 +10,11 @@ This repo contains setup scripts and a Claude Code plugin that configure coding 
 setup-fmapi-claudecode.sh                          # Thin entry point: source libs, parse CLI, dispatch
 install.sh                                         # Bootstrap installer for bash <(curl ...) one-liner
 VERSION                                            # Version file (single line, e.g., 1.0.0)
+agents/
+  claudecode.sh                                    # Claude Code agent adapter (AGENT_* vars + agent_* functions)
 lib/
   core.sh                                          # Preamble, colors, logging, utilities, _install_hint
-  help.sh                                          # show_help (help text)
+  help.sh                                          # show_help (help text, uses AGENT_* variables)
   config.sh                                        # Config discovery and file/URL loading
   shared.sh                                        # OAuth, endpoints, validation, shared helpers
   commands.sh                                      # All do_* command functions
@@ -57,7 +59,7 @@ The plugin is automatically registered in `~/.claude/plugins/installed_plugins.j
 
 ## Key Concepts
 
-- **`setup-fmapi-claudecode.sh`** — Thin entry point (~120 lines) that sources `lib/*.sh` modules, parses CLI flags, and dispatches to the appropriate command or setup flow. Supports `--status`, `--reauth`, `--doctor`, `--list-models`, `--validate-models`, `--self-update`, `--uninstall`, `--config`, `--config-url`, and CLI flags for non-interactive setup. Passing `--host`, `--config`, or `--config-url` enables non-interactive mode where all other flags auto-default (profile defaults to `fmapi-claudecode-profile`).
+- **`setup-fmapi-claudecode.sh`** — Thin entry point (~120 lines) that sources the agent adapter (`agents/claudecode.sh`) and `lib/*.sh` modules, parses CLI flags, and dispatches to the appropriate command or setup flow. Supports `--status`, `--reauth`, `--doctor`, `--list-models`, `--validate-models`, `--self-update`, `--uninstall`, `--config`, `--config-url`, and CLI flags for non-interactive setup. Passing `--host`, `--config`, or `--config-url` enables non-interactive mode where all other flags auto-default (profile defaults to `fmapi-claudecode-profile`).
 - **`install.sh`** — Bootstrap installer for `bash <(curl ...)` one-liner. Clones the repo to `~/.fmapi-codingagent-setup/` (or `$FMAPI_HOME`). Idempotent: re-running updates an existing clone. Supports `--branch` for installing a specific branch or tag. Does not auto-run setup — prints next-step instructions only.
 - **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `lib/core.sh` into the `FMAPI_VERSION` global. Falls back to `dev` if missing.
 - **`example-config.json`** — Example JSON config file showing all supported keys. Used with `--config` or hosted remotely for `--config-url` to enable reproducible, shareable team setups. Priority chain: CLI flags > config file > existing settings > hardcoded defaults.
@@ -68,24 +70,84 @@ The plugin is automatically registered in `~/.claude/plugins/installed_plugins.j
 
 ## Module Architecture
 
-The setup script is split into six sourced library modules under `lib/`. The entry point sources them in order: `core.sh` → `help.sh` → `config.sh` → `shared.sh` → `commands.sh` → `setup.sh`. Each module depends only on modules sourced before it.
+The setup script is split into an agent adapter and six sourced library modules. The entry point sources them in order: `core.sh` → `agents/<agent>.sh` → `help.sh` → `config.sh` → `shared.sh` → `commands.sh` → `setup.sh`. Each module depends only on modules sourced before it.
 
 | Module | Contents |
 |---|---|
 | `lib/core.sh` | Cleanup trap, ANSI colors, `_OS_TYPE`/`_IS_WSL`/`_WSL_VERSION`/`VERBOSITY`/`DRY_RUN`/`FMAPI_VERSION` globals, logging (`info`, `success`, `error`, `debug`), utilities (`array_contains`, `require_cmd`, `_install_hint`, `prompt_value`, `select_option`) |
-| `lib/help.sh` | `show_help()` — static help text, no dependencies |
+| `agents/claudecode.sh` | Agent adapter: `AGENT_*` variables (identity, defaults, env var names) and `agent_*` functions (write env, read env, install CLI, onboarding, plugin registration, doctor checks, dry-run sections) |
+| `lib/help.sh` | `show_help()` — help text using `$AGENT_*` variables for agent-specific values |
 | `lib/config.sh` | `discover_config()`, `_CONFIG_VALID_KEYS`, `load_config_file()`, `load_config_url()` |
-| `lib/shared.sh` | `_get_oauth_token()`, `_detect_workspace_id()`, `_build_base_url()`, `_fetch_endpoints()`, `_validate_models_report()`, plus shared helpers: `_is_headless()`, `_require_fmapi_config()`, `_require_valid_oauth()` |
+| `lib/shared.sh` | `_get_oauth_token()`, `_detect_workspace_id()`, `_build_base_url()`, `_fetch_endpoints()`, `_validate_models_report()`, `_display_agent_endpoints()`, plus shared helpers: `_is_headless()`, `_require_fmapi_config()`, `_require_valid_oauth()` |
 | `lib/commands.sh` | `do_status()`, `do_reauth()`, `do_uninstall()`, `do_list_models()`, `do_validate_models()`, `do_self_update()`, `do_doctor()` (with `_doctor_*` sub-functions) |
-| `lib/setup.sh` | `gather_config_pre_auth()`, `gather_config_models()`, `install_dependencies()`, `authenticate()`, `resolve_workspace_id()`, `write_settings()`, `ensure_onboarding()`, `write_helper()`, `register_plugin()`, `run_smoke_test()`, `print_summary()`, `print_dry_run_plan()`, `do_setup()` |
+| `lib/setup.sh` | `gather_config_pre_auth()`, `gather_config_models()`, `install_dependencies()`, `authenticate()`, `resolve_workspace_id()`, `write_settings()`, `write_helper()`, `run_smoke_test()`, `print_summary()`, `print_dry_run_plan()`, `do_setup()` |
 
 Key shared helpers that deduplicate repeated patterns:
-- **`_install_hint(cmd)`** — Platform-appropriate install hint for any dependency (jq, databricks, claude, curl)
+- **`_install_hint(cmd)`** — Platform-appropriate install hint for any dependency (jq, databricks, agent CLI, curl). Uses `AGENT_CLI_CMD` and `AGENT_CLI_INSTALL_CMD` for the agent's CLI.
 - **`_is_headless()`** — Detects headless SSH sessions (replaces 3 inline checks)
 - **`_require_fmapi_config(caller)`** — Common preamble: require jq + databricks, discover config, validate profile
 - **`_require_valid_oauth()`** — Check OAuth token validity with standard error message
 
-The global `SCRIPT_DIR` is computed once in the entry point and used by `write_helper()`, `register_plugin()`, and `print_dry_run_plan()` instead of `BASH_SOURCE[0]` (which would point to the sourced lib file, not the entry script).
+The global `SCRIPT_DIR` is computed once in the entry point and used by `write_helper()`, `agent_register_plugin()`, and `print_dry_run_plan()` instead of `BASH_SOURCE[0]` (which would point to the sourced lib file, not the entry script).
+
+## Agent Adapter Contract
+
+Each agent gets its own adapter file under `agents/` that defines the full set of `AGENT_*` variables and `agent_*` functions. The shared `lib/` modules are completely agent-agnostic — they reference only `AGENT_*` / `agent_*` symbols, never hardcode agent-specific values.
+
+### Required Variables
+
+| Variable | Example (Claude Code) | Description |
+|---|---|---|
+| `AGENT_NAME` | `"Claude Code"` | Display name |
+| `AGENT_ID` | `"claudecode"` | Short ID (used in script names, paths) |
+| `AGENT_CLI_CMD` | `"claude"` | CLI command to check/run |
+| `AGENT_CLI_INSTALL_CMD` | `"curl -fsSL ... \| bash"` | Shell command to install the CLI |
+| `AGENT_SETTINGS_DIR` | `".claude"` | Settings directory name |
+| `AGENT_SETTINGS_FILENAME` | `"settings.json"` | Settings filename |
+| `AGENT_HELPER_FILENAME` | `"fmapi-key-helper.sh"` | Helper script filename |
+| `AGENT_DEFAULT_PROFILE` | `"fmapi-claudecode-profile"` | Default Databricks CLI profile name |
+| `AGENT_DEFAULT_MODEL` | `"databricks-claude-opus-4-6"` | Default primary model |
+| `AGENT_DEFAULT_OPUS` | `"databricks-claude-opus-4-6"` | Default opus model |
+| `AGENT_DEFAULT_SONNET` | `"databricks-claude-sonnet-4-6"` | Default sonnet model |
+| `AGENT_DEFAULT_HAIKU` | `"databricks-claude-haiku-4-5"` | Default haiku model |
+| `AGENT_ENDPOINT_FILTER` | `"claude\|anthropic"` | Regex for endpoint table filtering |
+| `AGENT_ENDPOINT_TITLE` | `"Anthropic Claude"` | Display title for endpoint listings |
+| `AGENT_BASE_URL_SUFFIX` | `"/serving-endpoints/anthropic"` | URL suffix appended to workspace host |
+| `AGENT_ENV_MODEL` | `"ANTHROPIC_MODEL"` | Env var name for primary model |
+| `AGENT_ENV_BASE_URL` | `"ANTHROPIC_BASE_URL"` | Env var name for base URL |
+| `AGENT_ENV_OPUS` | `"ANTHROPIC_DEFAULT_OPUS_MODEL"` | Env var name for opus model |
+| `AGENT_ENV_SONNET` | `"ANTHROPIC_DEFAULT_SONNET_MODEL"` | Env var name for sonnet model |
+| `AGENT_ENV_HAIKU` | `"ANTHROPIC_DEFAULT_HAIKU_MODEL"` | Env var name for haiku model |
+| `AGENT_ENV_TTL` | `"CLAUDE_CODE_API_KEY_HELPER_TTL_MS"` | Env var name for TTL |
+| `AGENT_REQUIRED_ENV_KEYS` | Array of 5 keys | Env keys checked by doctor |
+| `AGENT_LEGACY_CLEANUP_KEYS` | `("ANTHROPIC_AUTH_TOKEN")` | Legacy env keys to remove on write |
+
+### Required Functions
+
+| Function | Description |
+|---|---|
+| `agent_settings_candidates()` | Set `_SETTINGS_CANDIDATES` array with settings file search paths |
+| `agent_read_env(settings_file)` | Read model/TTL from settings into `CFG_*` variables |
+| `agent_write_env_json(model, base_url, opus, sonnet, haiku, ttl_ms)` | Return the env JSON block for settings |
+| `agent_uninstall_env_keys_json()` | Return JSON array of env keys to clean on uninstall |
+| `agent_ensure_onboarding()` | Set agent-specific onboarding flags |
+| `agent_register_plugin(script_dir)` | Register agent plugin |
+| `agent_deregister_plugin()` | Remove agent plugin registration |
+| `agent_install_cli()` | Install agent CLI if missing |
+| `agent_doctor_extra()` | Agent-specific doctor checks (returns 0/1) |
+| `agent_dry_run_env_display(model, base_url, opus, sonnet, haiku, ttl_ms)` | Print env vars for dry-run |
+| `agent_dry_run_extra()` | Print agent-specific dry-run sections |
+
+### Internal Variable Convention
+
+Shared `lib/` modules use `FMAPI_*` for internal bash variables (e.g., `FMAPI_MODEL`, `FMAPI_OPUS_MODEL`). The agent adapter's `agent_write_env_json()` maps these to the actual env var names written to settings (e.g., `ANTHROPIC_MODEL`).
+
+### Adding a New Agent
+
+1. Create `agents/<agentid>.sh` implementing all variables and functions above.
+2. Create `setup-fmapi-<agentid>.sh` entry point that sources `agents/<agentid>.sh` after `lib/core.sh`.
+3. Add agent-specific artifacts (plugin manifests, skills) if applicable.
+4. The shared `lib/` modules work unchanged.
 
 ## CLI Flags
 

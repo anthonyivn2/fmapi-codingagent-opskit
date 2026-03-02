@@ -3,10 +3,10 @@
 # Sourced by setup-fmapi-claudecode.sh; do not run directly.
 
 show_help() {
-  cat <<'HELPTEXT'
-Usage: bash setup-fmapi-claudecode.sh [OPTIONS]
+  cat <<HELPTEXT
+Usage: bash setup-fmapi-${AGENT_ID}.sh [OPTIONS]
 
-Sets up Claude Code to use Databricks Foundation Model API (FMAPI).
+Sets up ${AGENT_NAME} to use Databricks Foundation Model API (FMAPI).
 
 Prerequisites:
   - macOS, Linux, or WSL [experimental] (dependencies installed automatically)
@@ -26,11 +26,11 @@ Commands:
 
 Setup options (skip interactive prompts):
   --host URL            Databricks workspace URL (required for non-interactive)
-  --profile NAME        CLI profile name (default: fmapi-claudecode-profile)
-  --model MODEL         Primary model (default: databricks-claude-opus-4-6)
-  --opus MODEL          Opus model (default: databricks-claude-opus-4-6)
-  --sonnet MODEL        Sonnet model (default: databricks-claude-sonnet-4-6)
-  --haiku MODEL         Haiku model (default: databricks-claude-haiku-4-5)
+  --profile NAME        CLI profile name (default: ${AGENT_DEFAULT_PROFILE})
+  --model MODEL         Primary model (default: ${AGENT_DEFAULT_MODEL})
+  --opus MODEL          Opus model (default: ${AGENT_DEFAULT_OPUS})
+  --sonnet MODEL        Sonnet model (default: ${AGENT_DEFAULT_SONNET})
+  --haiku MODEL         Haiku model (default: ${AGENT_DEFAULT_HAIKU})
   --ttl MINUTES         Token refresh interval in minutes (default: 60, max: 60, 60 recommended)
   --settings-location   Where to write settings: "home", "cwd", or path (default: home)
   --ai-gateway          Use AI Gateway v2 for API routing (beta, default: off)
@@ -48,23 +48,23 @@ Output options:
 
 Examples:
   # Interactive setup — prompts for everything
-  bash setup-fmapi-claudecode.sh
+  bash setup-fmapi-${AGENT_ID}.sh
 
   # Minimal non-interactive — only host required, rest uses defaults
-  bash setup-fmapi-claudecode.sh --host https://my-workspace.cloud.databricks.com
+  bash setup-fmapi-${AGENT_ID}.sh --host https://my-workspace.cloud.databricks.com
 
   # Non-interactive with custom profile and model
-  bash setup-fmapi-claudecode.sh --host https://my-workspace.cloud.databricks.com \
+  bash setup-fmapi-${AGENT_ID}.sh --host https://my-workspace.cloud.databricks.com \\
     --profile my-profile --model databricks-claude-sonnet-4-6
 
   # Setup from a config file
-  bash setup-fmapi-claudecode.sh --config ./my-config.json
+  bash setup-fmapi-${AGENT_ID}.sh --config ./my-config.json
 
   # Setup from a remote config URL
-  bash setup-fmapi-claudecode.sh --config-url https://example.com/fmapi-config.json
+  bash setup-fmapi-${AGENT_ID}.sh --config-url https://example.com/fmapi-config.json
 
   # Config file with CLI overrides
-  bash setup-fmapi-claudecode.sh --config ./my-config.json --model databricks-claude-sonnet-4-6
+  bash setup-fmapi-${AGENT_ID}.sh --config ./my-config.json --model databricks-claude-sonnet-4-6
 
   # Non-interactive with AI Gateway v2 (auto-detects workspace ID)
   bash setup-fmapi-claudecode.sh --host https://my-workspace.cloud.databricks.com --ai-gateway
@@ -74,50 +74,50 @@ Examples:
     --ai-gateway --workspace-id 1234567890
 
   # Check configuration health
-  bash setup-fmapi-claudecode.sh --status
+  bash setup-fmapi-${AGENT_ID}.sh --status
 
   # Re-authenticate expired OAuth session
-  bash setup-fmapi-claudecode.sh --reauth
+  bash setup-fmapi-${AGENT_ID}.sh --reauth
 
   # Run full diagnostics
-  bash setup-fmapi-claudecode.sh --doctor
+  bash setup-fmapi-${AGENT_ID}.sh --doctor
 
   # List available serving endpoints
-  bash setup-fmapi-claudecode.sh --list-models
+  bash setup-fmapi-${AGENT_ID}.sh --list-models
 
   # Validate configured models
-  bash setup-fmapi-claudecode.sh --validate-models
+  bash setup-fmapi-${AGENT_ID}.sh --validate-models
 
   # Rerun setup with previous config (no prompts)
-  bash setup-fmapi-claudecode.sh --reinstall
+  bash setup-fmapi-${AGENT_ID}.sh --reinstall
 
   # Update to the latest version
-  bash setup-fmapi-claudecode.sh --self-update
+  bash setup-fmapi-${AGENT_ID}.sh --self-update
 
   # Preview what setup would do (no changes made)
-  bash setup-fmapi-claudecode.sh --dry-run --host https://my-workspace.cloud.databricks.com
+  bash setup-fmapi-${AGENT_ID}.sh --dry-run --host https://my-workspace.cloud.databricks.com
 
   # Verbose output for debugging
-  bash setup-fmapi-claudecode.sh --verbose --status
+  bash setup-fmapi-${AGENT_ID}.sh --verbose --status
 
   # Quiet mode for CI (errors only)
-  bash setup-fmapi-claudecode.sh --quiet --host https://my-workspace.cloud.databricks.com
+  bash setup-fmapi-${AGENT_ID}.sh --quiet --host https://my-workspace.cloud.databricks.com
 
   # Pipe-friendly (no ANSI codes)
-  bash setup-fmapi-claudecode.sh --no-color --status
+  bash setup-fmapi-${AGENT_ID}.sh --no-color --status
 
   # Uninstall all FMAPI artifacts
-  bash setup-fmapi-claudecode.sh --uninstall
+  bash setup-fmapi-${AGENT_ID}.sh --uninstall
 
 Troubleshooting:
-  OAuth expired        Run: bash setup-fmapi-claudecode.sh --reauth
-  ConnectionRefused    Run: bash setup-fmapi-claudecode.sh --reinstall
+  OAuth expired        Run: bash setup-fmapi-${AGENT_ID}.sh --reauth
+  ConnectionRefused    Run: bash setup-fmapi-${AGENT_ID}.sh --reinstall
   "No config found"    Run setup first (without --status/--reauth)
   Wrong workspace URL  URL must start with https:// and have no trailing slash
   Permission denied    Helper script needs execute permission (chmod 700)
-  Model not found      Run: bash setup-fmapi-claudecode.sh --list-models
-  Update available     Run: bash setup-fmapi-claudecode.sh --self-update
-  Unclear issue        Run: bash setup-fmapi-claudecode.sh --doctor
+  Model not found      Run: bash setup-fmapi-${AGENT_ID}.sh --list-models
+  Update available     Run: bash setup-fmapi-${AGENT_ID}.sh --self-update
+  Unclear issue        Run: bash setup-fmapi-${AGENT_ID}.sh --doctor
 HELPTEXT
   exit 0
 }

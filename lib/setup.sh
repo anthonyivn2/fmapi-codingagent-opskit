@@ -23,14 +23,14 @@ gather_config_pre_auth() {
 
   local default_host default_profile default_ttl
   default_host=$(_default "$CLI_HOST" "$FILE_HOST" "$CFG_HOST" "")
-  default_profile=$(_default "$CLI_PROFILE" "$FILE_PROFILE" "$CFG_PROFILE" "fmapi-claudecode-profile")
+  default_profile=$(_default "$CLI_PROFILE" "$FILE_PROFILE" "$CFG_PROFILE" "$AGENT_DEFAULT_PROFILE")
   default_ttl=$(_default "$CLI_TTL" "$FILE_TTL" "$CFG_TTL" "60")
 
   # Store model defaults as globals for gather_config_models()
-  _DEFAULT_MODEL=$(_default "$CLI_MODEL" "$FILE_MODEL" "$CFG_MODEL" "databricks-claude-opus-4-6")
-  _DEFAULT_OPUS=$(_default "$CLI_OPUS" "$FILE_OPUS" "$CFG_OPUS" "databricks-claude-opus-4-6")
-  _DEFAULT_SONNET=$(_default "$CLI_SONNET" "$FILE_SONNET" "$CFG_SONNET" "databricks-claude-sonnet-4-6")
-  _DEFAULT_HAIKU=$(_default "$CLI_HAIKU" "$FILE_HAIKU" "$CFG_HAIKU" "databricks-claude-haiku-4-5")
+  _DEFAULT_MODEL=$(_default "$CLI_MODEL" "$FILE_MODEL" "$CFG_MODEL" "$AGENT_DEFAULT_MODEL")
+  _DEFAULT_OPUS=$(_default "$CLI_OPUS" "$FILE_OPUS" "$CFG_OPUS" "$AGENT_DEFAULT_OPUS")
+  _DEFAULT_SONNET=$(_default "$CLI_SONNET" "$FILE_SONNET" "$CFG_SONNET" "$AGENT_DEFAULT_SONNET")
+  _DEFAULT_HAIKU=$(_default "$CLI_HAIKU" "$FILE_HAIKU" "$CFG_HAIKU" "$AGENT_DEFAULT_HAIKU")
 
   # ── Workspace URL ─────────────────────────────────────────────────────────
   prompt_value DATABRICKS_HOST "Databricks workspace URL" "$CLI_HOST" "$default_host"
@@ -110,8 +110,8 @@ gather_config_pre_auth() {
     SETTINGS_BASE="$HOME"
   else
     select_option "Settings location" \
-      "Home directory|~/.claude/settings.json, default" \
-      "Current directory|./.claude/settings.json" \
+      "Home directory|~/${AGENT_SETTINGS_DIR}/${AGENT_SETTINGS_FILENAME}, default" \
+      "Current directory|./${AGENT_SETTINGS_DIR}/${AGENT_SETTINGS_FILENAME}" \
       "Custom path|enter your own path"
     SETTINGS_CHOICE="$SELECT_RESULT"
 
@@ -136,20 +136,20 @@ gather_config_pre_auth() {
     esac
   fi
 
-  SETTINGS_FILE="${SETTINGS_BASE}/.claude/settings.json"
-  HELPER_FILE="${SETTINGS_BASE}/.claude/fmapi-key-helper.sh"
+  SETTINGS_FILE="${SETTINGS_BASE}/${AGENT_SETTINGS_DIR}/${AGENT_SETTINGS_FILENAME}"
+  HELPER_FILE="${SETTINGS_BASE}/${AGENT_SETTINGS_DIR}/${AGENT_HELPER_FILENAME}"
 
   debug "gather_config_pre_auth: host=${DATABRICKS_HOST} profile=${DATABRICKS_PROFILE}"
   debug "gather_config_pre_auth: settings=${SETTINGS_FILE} helper=${HELPER_FILE}"
 }
 
 gather_config_models() {
-  prompt_value ANTHROPIC_MODEL "Model" "$CLI_MODEL" "$_DEFAULT_MODEL"
-  prompt_value ANTHROPIC_OPUS_MODEL "Opus model" "$CLI_OPUS" "$_DEFAULT_OPUS"
-  prompt_value ANTHROPIC_SONNET_MODEL "Sonnet model" "$CLI_SONNET" "$_DEFAULT_SONNET"
-  prompt_value ANTHROPIC_HAIKU_MODEL "Haiku model" "$CLI_HAIKU" "$_DEFAULT_HAIKU"
+  prompt_value FMAPI_MODEL "Model" "$CLI_MODEL" "$_DEFAULT_MODEL"
+  prompt_value FMAPI_OPUS_MODEL "Opus model" "$CLI_OPUS" "$_DEFAULT_OPUS"
+  prompt_value FMAPI_SONNET_MODEL "Sonnet model" "$CLI_SONNET" "$_DEFAULT_SONNET"
+  prompt_value FMAPI_HAIKU_MODEL "Haiku model" "$CLI_HAIKU" "$_DEFAULT_HAIKU"
 
-  debug "gather_config_models: model=${ANTHROPIC_MODEL} opus=${ANTHROPIC_OPUS_MODEL} sonnet=${ANTHROPIC_SONNET_MODEL} haiku=${ANTHROPIC_HAIKU_MODEL}"
+  debug "gather_config_models: model=${FMAPI_MODEL} opus=${FMAPI_OPUS_MODEL} sonnet=${FMAPI_SONNET_MODEL} haiku=${FMAPI_HAIKU_MODEL}"
 }
 
 install_dependencies() {
@@ -218,14 +218,8 @@ install_dependencies() {
       ;;
   esac
 
-  # Claude Code — cross-platform installer
-  if command -v claude &>/dev/null; then
-    success "Claude Code already installed."
-  else
-    info "Installing Claude Code ..."
-    curl -fsSL https://claude.ai/install.sh | bash
-    success "Claude Code installed."
-  fi
+  # Agent CLI — cross-platform installer
+  agent_install_cli
 }
 
 authenticate() {
@@ -324,36 +318,25 @@ write_settings() {
 
   mkdir -p "$(dirname "$SETTINGS_FILE")"
 
-  TTL_MS="$FMAPI_TTL_MS"
-
   local base_url=""
   base_url=$(_build_base_url "$DATABRICKS_HOST" "${AI_GATEWAY_ENABLED:-false}" "${WORKSPACE_ID:-}")
 
   local env_json=""
-  env_json=$(jq -n \
-    --arg model "$ANTHROPIC_MODEL" \
-    --arg base  "$base_url" \
-    --arg opus "$ANTHROPIC_OPUS_MODEL" \
-    --arg sonnet "$ANTHROPIC_SONNET_MODEL" \
-    --arg haiku "$ANTHROPIC_HAIKU_MODEL" \
-    --arg ttl "$TTL_MS" \
-    '{
-      "ANTHROPIC_MODEL": $model,
-      "ANTHROPIC_BASE_URL": $base,
-      "ANTHROPIC_DEFAULT_OPUS_MODEL": $opus,
-      "ANTHROPIC_DEFAULT_SONNET_MODEL": $sonnet,
-      "ANTHROPIC_DEFAULT_HAIKU_MODEL": $haiku,
-      "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
-      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-      "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": $ttl
-    }')
+  env_json=$(agent_write_env_json "$FMAPI_MODEL" "$base_url" \
+    "$FMAPI_OPUS_MODEL" "$FMAPI_SONNET_MODEL" "$FMAPI_HAIKU_MODEL" "$FMAPI_TTL_MS")
+
+  # Build JSON array of legacy keys to remove from .env
+  local legacy_json="[]"
+  if [[ ${#AGENT_LEGACY_CLEANUP_KEYS[@]} -gt 0 ]]; then
+    legacy_json=$(printf '%s\n' "${AGENT_LEGACY_CLEANUP_KEYS[@]}" | jq -R . | jq -s .)
+  fi
 
   if [[ -f "$SETTINGS_FILE" ]]; then
     local tmpfile=""
     tmpfile=$(mktemp "${SETTINGS_FILE}.XXXXXX")
     _CLEANUP_FILES+=("$tmpfile")
-    jq --argjson new_env "$env_json" --arg helper "$HELPER_FILE" \
-      '.env = ((.env // {}) * $new_env | del(.ANTHROPIC_AUTH_TOKEN)) | .apiKeyHelper = $helper | del(._fmapi_meta)' \
+    jq --argjson new_env "$env_json" --arg helper "$HELPER_FILE" --argjson legacy_keys "$legacy_json" \
+      '.env = ((.env // {}) * $new_env | reduce $legacy_keys[] as $k (.; del(.[$k]))) | .apiKeyHelper = $helper | del(._fmapi_meta)' \
       "$SETTINGS_FILE" > "$tmpfile"
     chmod 600 "$tmpfile"
     mv "$tmpfile" "$SETTINGS_FILE"
@@ -366,41 +349,11 @@ write_settings() {
   success "Settings written to ${SETTINGS_FILE}."
 }
 
-ensure_onboarding() {
-  local claude_json="$HOME/.claude.json"
-
-  # Check if hasCompletedOnboarding is already true
-  if [[ -f "$claude_json" ]]; then
-    local current=""
-    current=$(jq -r '.hasCompletedOnboarding // empty' "$claude_json" 2>/dev/null) || true
-    if [[ "$current" == "true" ]]; then
-      debug "ensure_onboarding: already set in ${claude_json}"
-      return 0
-    fi
-  fi
-
-  [[ "$VERBOSITY" -ge 1 ]] && echo -e "\n${BOLD}Onboarding flag${RESET}"
-
-  if [[ -f "$claude_json" ]]; then
-    local tmpfile=""
-    tmpfile=$(mktemp "${claude_json}.XXXXXX")
-    _CLEANUP_FILES+=("$tmpfile")
-    jq '.hasCompletedOnboarding = true' "$claude_json" > "$tmpfile"
-    chmod 600 "$tmpfile"
-    mv "$tmpfile" "$claude_json"
-  else
-    echo '{"hasCompletedOnboarding":true}' | jq '.' > "$claude_json"
-    chmod 600 "$claude_json"
-  fi
-  debug "ensure_onboarding: set hasCompletedOnboarding=true in ${claude_json}"
-  success "Onboarding flag set in ${claude_json}."
-}
-
 write_helper() {
   [[ "$VERBOSITY" -ge 1 ]] && echo -e "\n${BOLD}API key helper${RESET}"
 
   local template="${SCRIPT_DIR}/templates/fmapi-key-helper.sh.template"
-  local setup_script="${SCRIPT_DIR}/setup-fmapi-claudecode.sh"
+  local setup_script="${SCRIPT_DIR}/setup-fmapi-${AGENT_ID}.sh"
 
   if [[ ! -f "$template" ]]; then
     error "Helper template not found: ${template}"
@@ -415,36 +368,6 @@ write_helper() {
   chmod 700 "$HELPER_FILE"
   debug "write_helper: wrote ${HELPER_FILE} (profile=${DATABRICKS_PROFILE}, host=${DATABRICKS_HOST})"
   success "Helper script written to ${HELPER_FILE}."
-}
-
-register_plugin() {
-  if [[ -f "${SCRIPT_DIR}/.claude-plugin/plugin.json" ]]; then
-    local PLUGINS_FILE="$HOME/.claude/plugins/installed_plugins.json"
-    mkdir -p "$(dirname "$PLUGINS_FILE")"
-
-    local NEEDS_INSTALL=true
-    if [[ -f "$PLUGINS_FILE" ]]; then
-      local existing_path=""
-      existing_path=$(jq -r '.["fmapi-codingagent"].installPath // empty' "$PLUGINS_FILE" 2>/dev/null) || true
-      [[ "$existing_path" == "$SCRIPT_DIR" ]] && NEEDS_INSTALL=false
-    fi
-
-    if [[ "$NEEDS_INSTALL" == true ]]; then
-      if [[ -f "$PLUGINS_FILE" ]]; then
-        local plugin_tmp=""
-        plugin_tmp=$(mktemp "${PLUGINS_FILE}.XXXXXX")
-        _CLEANUP_FILES+=("$plugin_tmp")
-        jq --arg path "$SCRIPT_DIR" \
-          '.["fmapi-codingagent"] = {"scope": "user", "installPath": $path}' \
-          "$PLUGINS_FILE" > "$plugin_tmp"
-        mv "$plugin_tmp" "$PLUGINS_FILE"
-      else
-        jq -n --arg path "$SCRIPT_DIR" \
-          '{"fmapi-codingagent": {"scope": "user", "installPath": $path}}' > "$PLUGINS_FILE"
-      fi
-      success "Plugin registered (skills: /fmapi-codingagent-status, /fmapi-codingagent-reauth, /fmapi-codingagent-setup, /fmapi-codingagent-doctor, /fmapi-codingagent-list-models, /fmapi-codingagent-validate-models)."
-    fi
-  fi
 }
 
 run_smoke_test() {
@@ -503,10 +426,10 @@ run_smoke_test() {
 
     # 4. Configured models exist and are ready
     # Temporarily set CFG_ vars so _validate_models_report can work
-    local CFG_MODEL="$ANTHROPIC_MODEL"
-    local CFG_OPUS="$ANTHROPIC_OPUS_MODEL"
-    local CFG_SONNET="$ANTHROPIC_SONNET_MODEL"
-    local CFG_HAIKU="$ANTHROPIC_HAIKU_MODEL"
+    local CFG_MODEL="$FMAPI_MODEL"
+    local CFG_OPUS="$FMAPI_OPUS_MODEL"
+    local CFG_SONNET="$FMAPI_SONNET_MODEL"
+    local CFG_HAIKU="$FMAPI_HAIKU_MODEL"
     local CFG_PROFILE="$DATABRICKS_PROFILE"
     if _fetch_endpoints "$DATABRICKS_PROFILE"; then
       _validate_models_report
@@ -532,10 +455,10 @@ print_summary() {
   echo -e "\n${GREEN}${BOLD}  Setup complete!${RESET}"
   echo -e "  ${DIM}Workspace${RESET}  ${BOLD}${DATABRICKS_HOST}${RESET}"
   echo -e "  ${DIM}Profile${RESET}    ${BOLD}${DATABRICKS_PROFILE}${RESET}"
-  echo -e "  ${DIM}Model${RESET}      ${BOLD}${ANTHROPIC_MODEL}${RESET}"
-  echo -e "  ${DIM}Opus${RESET}       ${BOLD}${ANTHROPIC_OPUS_MODEL}${RESET}"
-  echo -e "  ${DIM}Sonnet${RESET}     ${BOLD}${ANTHROPIC_SONNET_MODEL}${RESET}"
-  echo -e "  ${DIM}Haiku${RESET}      ${BOLD}${ANTHROPIC_HAIKU_MODEL}${RESET}"
+  echo -e "  ${DIM}Model${RESET}      ${BOLD}${FMAPI_MODEL}${RESET}"
+  echo -e "  ${DIM}Opus${RESET}       ${BOLD}${FMAPI_OPUS_MODEL}${RESET}"
+  echo -e "  ${DIM}Sonnet${RESET}     ${BOLD}${FMAPI_SONNET_MODEL}${RESET}"
+  echo -e "  ${DIM}Haiku${RESET}      ${BOLD}${FMAPI_HAIKU_MODEL}${RESET}"
   if [[ "${AI_GATEWAY_ENABLED:-false}" == "true" ]]; then
     local gw_base_url=""
     gw_base_url=$(_build_base_url "$DATABRICKS_HOST" "true" "${WORKSPACE_ID:-}")
@@ -548,16 +471,16 @@ print_summary() {
   echo -e "  ${DIM}Auth${RESET}       ${BOLD}OAuth (auto-refresh, ${FMAPI_TTL_MINUTES}m check interval)${RESET}"
   echo -e "  ${DIM}Helper${RESET}     ${BOLD}${HELPER_FILE}${RESET}"
   echo -e "  ${DIM}Settings${RESET}   ${BOLD}${SETTINGS_FILE}${RESET}"
-  echo -e "\n  Run ${CYAN}${BOLD}claude${RESET} to start.\n"
+  echo -e "\n  Run ${CYAN}${BOLD}${AGENT_CLI_CMD}${RESET} to start.\n"
 }
 
 print_dry_run_plan() {
-  echo -e "\n${BOLD}  Claude Code x Databricks FMAPI — Dry Run${RESET}\n"
+  echo -e "\n${BOLD}  ${AGENT_NAME} x Databricks FMAPI — Dry Run${RESET}\n"
   echo -e "  The following actions ${BOLD}would${RESET} be performed:\n"
 
   # Dependencies
   echo -e "  ${BOLD}Dependencies${RESET}"
-  for dep_name in jq databricks claude; do
+  for dep_name in jq databricks "$AGENT_CLI_CMD"; do
     if command -v "$dep_name" &>/dev/null; then
       echo -e "  ${GREEN}${BOLD}ok${RESET}  ${dep_name} already installed"
     else
@@ -606,53 +529,20 @@ print_dry_run_plan() {
     echo -e "       ${DIM}(would be created)${RESET}"
   fi
   echo -e "  ${CYAN}::${RESET}  Env vars that would be set:"
-  echo -e "       ANTHROPIC_MODEL=${BOLD}${ANTHROPIC_MODEL}${RESET}"
-  echo -e "       ANTHROPIC_BASE_URL=${BOLD}${dry_run_base_url}${RESET}"
-  echo -e "       ANTHROPIC_DEFAULT_OPUS_MODEL=${BOLD}${ANTHROPIC_OPUS_MODEL}${RESET}"
-  echo -e "       ANTHROPIC_DEFAULT_SONNET_MODEL=${BOLD}${ANTHROPIC_SONNET_MODEL}${RESET}"
-  echo -e "       ANTHROPIC_DEFAULT_HAIKU_MODEL=${BOLD}${ANTHROPIC_HAIKU_MODEL}${RESET}"
-  echo -e "       CLAUDE_CODE_API_KEY_HELPER_TTL_MS=${BOLD}${FMAPI_TTL_MS}${RESET}"
+  agent_dry_run_env_display "$FMAPI_MODEL" "$dry_run_base_url" \
+    "$FMAPI_OPUS_MODEL" "$FMAPI_SONNET_MODEL" "$FMAPI_HAIKU_MODEL" "$FMAPI_TTL_MS"
   echo ""
 
-  # Onboarding
-  echo -e "  ${BOLD}Onboarding${RESET}"
-  local claude_json="$HOME/.claude.json"
-  local onboarding_done=false
-  if [[ -f "$claude_json" ]]; then
-    local ob_val=""
-    ob_val=$(jq -r '.hasCompletedOnboarding // empty' "$claude_json" 2>/dev/null) || true
-    [[ "$ob_val" == "true" ]] && onboarding_done=true
-  fi
-  if [[ "$onboarding_done" == true ]]; then
-    echo -e "  ${GREEN}${BOLD}ok${RESET}  hasCompletedOnboarding already set in ${DIM}${claude_json}${RESET}"
-  else
-    echo -e "  ${CYAN}::${RESET}  Would set hasCompletedOnboarding=true in ${DIM}${claude_json}${RESET}"
-  fi
-  echo ""
+  # Agent-specific dry-run sections (onboarding, plugin registration)
+  agent_dry_run_extra
 
   # Helper
-  echo -e "  ${BOLD}Helper script${RESET}"
+  echo -e "\n  ${BOLD}Helper script${RESET}"
   echo -e "  ${CYAN}::${RESET}  Path: ${BOLD}${HELPER_FILE}${RESET}"
   if [[ -f "$HELPER_FILE" ]]; then
     echo -e "       ${DIM}(exists — would be overwritten)${RESET}"
   else
     echo -e "       ${DIM}(would be created)${RESET}"
-  fi
-  echo ""
-
-  # Plugin
-  echo -e "  ${BOLD}Plugin registration${RESET}"
-  local plugins_file="$HOME/.claude/plugins/installed_plugins.json"
-  if [[ -f "$plugins_file" ]]; then
-    local existing_path=""
-    existing_path=$(jq -r '.["fmapi-codingagent"].installPath // empty' "$plugins_file" 2>/dev/null) || true
-    if [[ "$existing_path" == "$SCRIPT_DIR" ]]; then
-      echo -e "  ${GREEN}${BOLD}ok${RESET}  Already registered"
-    else
-      echo -e "  ${CYAN}::${RESET}  Would register plugin at ${BOLD}${SCRIPT_DIR}${RESET}"
-    fi
-  else
-    echo -e "  ${CYAN}::${RESET}  Would register plugin at ${BOLD}${SCRIPT_DIR}${RESET}"
   fi
   echo -e "\n  ${DIM}No changes were made. Remove --dry-run to run setup.${RESET}\n"
 }
@@ -660,12 +550,12 @@ print_dry_run_plan() {
 _show_reuse_summary() {
   echo -e "\n  ${BOLD}Existing configuration found:${RESET}\n"
   echo -e "  ${DIM}Workspace${RESET}  ${BOLD}${CFG_HOST}${RESET}"
-  echo -e "  ${DIM}Profile${RESET}    ${BOLD}${CFG_PROFILE:-fmapi-claudecode-profile}${RESET}"
+  echo -e "  ${DIM}Profile${RESET}    ${BOLD}${CFG_PROFILE:-$AGENT_DEFAULT_PROFILE}${RESET}"
   echo -e "  ${DIM}TTL${RESET}        ${BOLD}${CFG_TTL:-60}m${RESET}"
-  echo -e "  ${DIM}Model${RESET}      ${BOLD}${CFG_MODEL:-databricks-claude-opus-4-6}${RESET}"
-  echo -e "  ${DIM}Opus${RESET}       ${BOLD}${CFG_OPUS:-databricks-claude-opus-4-6}${RESET}"
-  echo -e "  ${DIM}Sonnet${RESET}     ${BOLD}${CFG_SONNET:-databricks-claude-sonnet-4-6}${RESET}"
-  echo -e "  ${DIM}Haiku${RESET}      ${BOLD}${CFG_HAIKU:-databricks-claude-haiku-4-5}${RESET}"
+  echo -e "  ${DIM}Model${RESET}      ${BOLD}${CFG_MODEL:-$AGENT_DEFAULT_MODEL}${RESET}"
+  echo -e "  ${DIM}Opus${RESET}       ${BOLD}${CFG_OPUS:-$AGENT_DEFAULT_OPUS}${RESET}"
+  echo -e "  ${DIM}Sonnet${RESET}     ${BOLD}${CFG_SONNET:-$AGENT_DEFAULT_SONNET}${RESET}"
+  echo -e "  ${DIM}Haiku${RESET}      ${BOLD}${CFG_HAIKU:-$AGENT_DEFAULT_HAIKU}${RESET}"
   if [[ "${CFG_AI_GATEWAY:-}" == "true" ]]; then
     echo -e "  ${DIM}Routing${RESET}    ${BOLD}AI Gateway v2 (beta)${RESET}"
     echo -e "  ${DIM}Workspace ID${RESET} ${BOLD}${CFG_WORKSPACE_ID:-unknown}${RESET}"
@@ -686,7 +576,7 @@ _show_reuse_summary() {
 }
 
 do_setup() {
-  echo -e "\n${BOLD}  Claude Code x Databricks FMAPI Setup${RESET}\n"
+  echo -e "\n${BOLD}  ${AGENT_NAME} x Databricks FMAPI Setup${RESET}\n"
 
   # Fast-path: re-running with existing config — show summary + confirm
   if [[ "$NON_INTERACTIVE" != true ]] && [[ "$DRY_RUN" != true ]] && command -v jq &>/dev/null; then
@@ -700,17 +590,17 @@ do_setup() {
         NON_INTERACTIVE=true
         # Populate CLI_* from CFG_* (only if CLI_* is empty — preserves explicit flags)
         [[ -z "$CLI_HOST" ]]     && CLI_HOST="$CFG_HOST"
-        [[ -z "$CLI_PROFILE" ]]  && CLI_PROFILE="${CFG_PROFILE:-fmapi-claudecode-profile}"
+        [[ -z "$CLI_PROFILE" ]]  && CLI_PROFILE="${CFG_PROFILE:-$AGENT_DEFAULT_PROFILE}"
         [[ -z "$CLI_TTL" ]]      && CLI_TTL="${CFG_TTL:-60}"
-        [[ -z "$CLI_MODEL" ]]    && CLI_MODEL="${CFG_MODEL:-databricks-claude-opus-4-6}"
-        [[ -z "$CLI_OPUS" ]]     && CLI_OPUS="${CFG_OPUS:-databricks-claude-opus-4-6}"
-        [[ -z "$CLI_SONNET" ]]   && CLI_SONNET="${CFG_SONNET:-databricks-claude-sonnet-4-6}"
-        [[ -z "$CLI_HAIKU" ]]    && CLI_HAIKU="${CFG_HAIKU:-databricks-claude-haiku-4-5}"
+        [[ -z "$CLI_MODEL" ]]    && CLI_MODEL="${CFG_MODEL:-$AGENT_DEFAULT_MODEL}"
+        [[ -z "$CLI_OPUS" ]]     && CLI_OPUS="${CFG_OPUS:-$AGENT_DEFAULT_OPUS}"
+        [[ -z "$CLI_SONNET" ]]   && CLI_SONNET="${CFG_SONNET:-$AGENT_DEFAULT_SONNET}"
+        [[ -z "$CLI_HAIKU" ]]    && CLI_HAIKU="${CFG_HAIKU:-$AGENT_DEFAULT_HAIKU}"
         [[ -z "$CLI_AI_GATEWAY" ]] && CLI_AI_GATEWAY="${CFG_AI_GATEWAY:-false}"
         [[ -z "$CLI_WORKSPACE_ID" ]] && CLI_WORKSPACE_ID="${CFG_WORKSPACE_ID:-}"
         # Derive settings location from discovered settings file path
         if [[ -z "$CLI_SETTINGS_LOCATION" ]] && [[ -n "$CFG_SETTINGS_FILE" ]]; then
-          local cfg_base="${CFG_SETTINGS_FILE%/.claude/settings.json}"
+          local cfg_base="${CFG_SETTINGS_FILE%/${AGENT_SETTINGS_DIR}/${AGENT_SETTINGS_FILENAME}}"
           if [[ "$cfg_base" == "$HOME" ]]; then
             CLI_SETTINGS_LOCATION="home"
           else
@@ -737,9 +627,9 @@ do_setup() {
   # Show available Claude endpoints before model selection (interactive only)
   if [[ "$NON_INTERACTIVE" != true ]]; then
     if _fetch_endpoints "$DATABRICKS_PROFILE" 2>/dev/null; then
-      echo -e "\n${BOLD}Available Claude endpoints${RESET}\n"
-      if ! _display_claude_endpoints; then
-        info "No Claude/Anthropic endpoints found. You can still enter model names manually."
+      echo -e "\n${BOLD}Available ${AGENT_ENDPOINT_TITLE} endpoints${RESET}\n"
+      if ! _display_agent_endpoints; then
+        info "No ${AGENT_ENDPOINT_TITLE} endpoints found. You can still enter model names manually."
       fi
       echo ""
     fi
@@ -748,9 +638,9 @@ do_setup() {
   gather_config_models
 
   write_settings
-  ensure_onboarding
+  agent_ensure_onboarding
   write_helper
-  register_plugin
+  agent_register_plugin "$SCRIPT_DIR"
   run_smoke_test
   print_summary
 }

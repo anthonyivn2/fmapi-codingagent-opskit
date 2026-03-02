@@ -6,9 +6,10 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Source library modules ────────────────────────────────────────────────────
-for _lib_file in "${SCRIPT_DIR}/lib/core.sh" "${SCRIPT_DIR}/lib/help.sh" \
-                  "${SCRIPT_DIR}/lib/config.sh" "${SCRIPT_DIR}/lib/shared.sh" \
-                  "${SCRIPT_DIR}/lib/commands.sh" "${SCRIPT_DIR}/lib/setup.sh"; do
+for _lib_file in "${SCRIPT_DIR}/lib/core.sh" "${SCRIPT_DIR}/agents/claudecode.sh" \
+                  "${SCRIPT_DIR}/lib/help.sh" "${SCRIPT_DIR}/lib/config.sh" \
+                  "${SCRIPT_DIR}/lib/shared.sh" "${SCRIPT_DIR}/lib/commands.sh" \
+                  "${SCRIPT_DIR}/lib/setup.sh"; do
   if [[ ! -f "$_lib_file" ]]; then
     echo "ERROR: Missing required file: ${_lib_file}" >&2
     echo "Run this script from the cloned repository." >&2
@@ -18,6 +19,8 @@ done
 
 # shellcheck source=lib/core.sh
 source "${SCRIPT_DIR}/lib/core.sh"
+# shellcheck source=agents/claudecode.sh
+source "${SCRIPT_DIR}/agents/claudecode.sh"
 # shellcheck source=lib/help.sh
 source "${SCRIPT_DIR}/lib/help.sh"
 # shellcheck source=lib/config.sh
@@ -120,7 +123,7 @@ if [[ "${ACTION}" == "reinstall" ]]; then
     error "No existing FMAPI configuration found. Run setup first (without --reinstall)."
     exit 1
   fi
-  info "Re-installing with existing config (${CFG_HOST}, profile: ${CFG_PROFILE:-fmapi-claudecode-profile})"
+  info "Re-installing with existing config (${CFG_HOST}, profile: ${CFG_PROFILE:-$AGENT_DEFAULT_PROFILE})"
   NON_INTERACTIVE=true
   # Propagate gateway config from discovered config
   [[ -z "$CLI_AI_GATEWAY" ]] && CLI_AI_GATEWAY="${CFG_AI_GATEWAY:-false}"

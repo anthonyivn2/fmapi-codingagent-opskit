@@ -103,9 +103,6 @@ _install_hint() {
         echo "brew tap databricks/tap && brew install databricks"
       fi
       ;;
-    claude)
-      echo "curl -fsSL https://claude.ai/install.sh | bash"
-      ;;
     curl)
       if [[ "$_OS_TYPE" == "Linux" ]]; then
         echo "sudo apt-get install -y curl  (or sudo yum install -y curl)"
@@ -114,7 +111,11 @@ _install_hint() {
       fi
       ;;
     *)
-      echo "Install $cmd"
+      if [[ "$cmd" == "${AGENT_CLI_CMD:-}" ]]; then
+        echo "$AGENT_CLI_INSTALL_CMD"
+      else
+        echo "Install $cmd"
+      fi
       ;;
   esac
 }

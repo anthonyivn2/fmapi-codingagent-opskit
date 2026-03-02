@@ -12,7 +12,7 @@ do_status() {
   if [[ "$CFG_FOUND" != true ]]; then
     echo -e "\n${BOLD}  FMAPI Status${RESET}\n"
     info "No FMAPI configuration found."
-    info "Run ${CYAN}bash setup-fmapi-claudecode.sh${RESET} to set up."
+    info "Run ${CYAN}bash setup-fmapi-${AGENT_ID}.sh${RESET} to set up."
     echo ""
     exit 0
   fi
@@ -97,7 +97,7 @@ do_reauth() {
 }
 
 do_uninstall() {
-  echo -e "\n${BOLD}  Claude Code x Databricks FMAPI — Uninstall${RESET}\n"
+  echo -e "\n${BOLD}  ${AGENT_NAME} x Databricks FMAPI — Uninstall${RESET}\n"
 
   require_cmd jq "jq is required for uninstall. Install with: $(_install_hint jq)"
 
@@ -117,7 +117,8 @@ do_uninstall() {
   fi
 
   # Check well-known settings locations + any discovered custom location
-  declare -a candidates=("$HOME/.claude/settings.json" "./.claude/settings.json")
+  agent_settings_candidates
+  declare -a candidates=("${_SETTINGS_CANDIDATES[@]}")
   [[ -n "$extra_candidate" ]] && candidates+=("$extra_candidate")
   for candidate in "${candidates[@]}"; do
     [[ -f "$candidate" ]] || continue
@@ -210,7 +211,8 @@ do_uninstall() {
   done
 
   # ── Clean settings files ─────────────────────────────────────────────────
-  local fmapi_env_keys='["ANTHROPIC_MODEL","ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN","ANTHROPIC_DEFAULT_OPUS_MODEL","ANTHROPIC_DEFAULT_SONNET_MODEL","ANTHROPIC_DEFAULT_HAIKU_MODEL","ANTHROPIC_CUSTOM_HEADERS","CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS","CLAUDE_CODE_API_KEY_HELPER_TTL_MS"]'
+  local fmapi_env_keys=""
+  fmapi_env_keys=$(agent_uninstall_env_keys_json)
 
   for sf in "${settings_files[@]}"; do
     local tmpfile=""
@@ -237,22 +239,7 @@ do_uninstall() {
   done
 
   # ── Remove plugin registration ─────────────────────────────────────────
-  local plugins_file="$HOME/.claude/plugins/installed_plugins.json"
-  if [[ -f "$plugins_file" ]] && jq -e '.["fmapi-codingagent"]' "$plugins_file" &>/dev/null; then
-    local ptmp=""
-    ptmp=$(mktemp "${plugins_file}.XXXXXX")
-    _CLEANUP_FILES+=("$ptmp")
-    jq 'del(.["fmapi-codingagent"])' "$plugins_file" > "$ptmp"
-    local plen=""
-    plen=$(jq 'length' "$ptmp")
-    if [[ "$plen" == "0" ]]; then
-      rm -f "$ptmp" "$plugins_file"
-      success "Removed plugin registration (file deleted — no other plugins)."
-    else
-      mv "$ptmp" "$plugins_file"
-      success "Removed plugin registration from ${plugins_file}."
-    fi
-  fi
+  agent_deregister_plugin
 
   # ── Remove default install directory ──────────────────────────────────────
   if [[ -d "$default_install_dir" ]]; then
@@ -272,7 +259,7 @@ do_list_models() {
   fi
   _require_valid_oauth
 
-  echo -e "\n${BOLD}  FMAPI Anthropic Claude Serving Endpoints${RESET}"
+  echo -e "\n${BOLD}  FMAPI ${AGENT_ENDPOINT_TITLE} Serving Endpoints${RESET}"
   echo -e "  ${DIM}Workspace: ${CFG_HOST}${RESET}\n"
 
   if ! _fetch_endpoints "$CFG_PROFILE"; then
@@ -287,8 +274,8 @@ do_list_models() {
   [[ -n "$CFG_SONNET" ]] && configured_models+=("$CFG_SONNET")
   [[ -n "$CFG_HAIKU" ]] && configured_models+=("$CFG_HAIKU")
 
-  if ! _display_claude_endpoints ${configured_models[@]+"${configured_models[@]}"}; then
-    info "No Claude/Anthropic serving endpoints found in this workspace."
+  if ! _display_agent_endpoints ${configured_models[@]+"${configured_models[@]}"}; then
+    info "No ${AGENT_ENDPOINT_TITLE} serving endpoints found in this workspace."
     echo ""
     exit 0
   fi
@@ -331,14 +318,14 @@ _doctor_dependencies() {
   echo -e "  ${BOLD}Dependencies${RESET}"
   local deps_ok=true
 
-  for dep_name in jq databricks claude curl; do
+  for dep_name in jq databricks "$AGENT_CLI_CMD" curl; do
     if command -v "$dep_name" &>/dev/null; then
       local ver=""
       case "$dep_name" in
         jq)         ver=$(jq --version 2>/dev/null || echo "unknown") ;;
         databricks) ver=$(databricks --version 2>/dev/null | head -1 || echo "unknown") ;;
-        claude)     ver=$(claude --version 2>/dev/null | head -1 || echo "unknown") ;;
         curl)       ver=$(curl --version 2>/dev/null | head -1 || echo "unknown") ;;
+        *)          ver=$("$dep_name" --version 2>/dev/null | head -1 || echo "unknown") ;;
       esac
       echo -e "  ${GREEN}${BOLD}PASS${RESET}  ${dep_name}  ${DIM}${ver}${RESET}"
     else
@@ -408,7 +395,7 @@ _doctor_configuration() {
   fi
 
   # Required FMAPI keys present
-  local required_keys=("ANTHROPIC_MODEL" "ANTHROPIC_BASE_URL" "ANTHROPIC_DEFAULT_OPUS_MODEL" "ANTHROPIC_DEFAULT_SONNET_MODEL" "ANTHROPIC_DEFAULT_HAIKU_MODEL")
+  local required_keys=("${AGENT_REQUIRED_ENV_KEYS[@]}")
   local missing_keys=()
   for key in "${required_keys[@]}"; do
     local val=""
@@ -429,19 +416,8 @@ _doctor_configuration() {
     echo -e "  ${DIM}INFO${RESET}  Routing: Serving Endpoints (v1)"
   fi
 
-  # Onboarding flag in ~/.claude.json
-  local claude_json="$HOME/.claude.json"
-  if [[ -f "$claude_json" ]]; then
-    local ob_val=""
-    ob_val=$(jq -r '.hasCompletedOnboarding // empty' "$claude_json" 2>/dev/null) || true
-    if [[ "$ob_val" == "true" ]]; then
-      echo -e "  ${GREEN}${BOLD}PASS${RESET}  hasCompletedOnboarding is set  ${DIM}${claude_json}${RESET}"
-    else
-      echo -e "  ${RED}${BOLD}FAIL${RESET}  hasCompletedOnboarding not set  ${DIM}Fix: re-run setup or add to ${claude_json}${RESET}"
-      config_ok=false
-    fi
-  else
-    echo -e "  ${RED}${BOLD}FAIL${RESET}  ${claude_json} not found  ${DIM}Fix: re-run setup${RESET}"
+  # Agent-specific configuration checks
+  if ! agent_doctor_extra; then
     config_ok=false
   fi
 

@@ -124,15 +124,15 @@ _validate_models_report() {
   done
 }
 
-# Display Claude/Anthropic endpoints from _ENDPOINTS_JSON as a formatted table.
+# Display agent-relevant endpoints from _ENDPOINTS_JSON as a formatted table.
 # Accepts optional model names as positional args to highlight in the table.
-# Returns 1 if no Claude endpoints found, 0 otherwise.
-_display_claude_endpoints() {
+# Returns 1 if no matching endpoints found, 0 otherwise.
+_display_agent_endpoints() {
   local highlight_models=("$@")
 
-  # Filter to Claude/Anthropic endpoints only
+  # Filter to agent-relevant endpoints
   local filtered=""
-  filtered=$(echo "$_ENDPOINTS_JSON" | jq '[.[] | select(.name | test("claude|anthropic"; "i"))]') || true
+  filtered=$(echo "$_ENDPOINTS_JSON" | jq --arg filter "$AGENT_ENDPOINT_FILTER" '[.[] | select(.name | test($filter; "i"))]') || true
   local count=""
   count=$(echo "$filtered" | jq 'length') || true
   if [[ "$count" == "0" || -z "$count" ]]; then
@@ -207,7 +207,7 @@ _require_fmapi_config() {
 # Require a valid OAuth token (exits on failure)
 _require_valid_oauth() {
   if ! _get_oauth_token "$CFG_PROFILE" >/dev/null 2>&1; then
-    error "OAuth session expired or invalid. Run: bash setup-fmapi-claudecode.sh --reauth"
+    error "OAuth session expired or invalid. Run: bash setup-fmapi-${AGENT_ID}.sh --reauth"
     exit 1
   fi
 }

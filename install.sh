@@ -34,12 +34,12 @@ _has_fmapi_config() {
   local settings="$HOME/.claude/settings.json"
   [[ -f "$settings" ]] || return 1
   if command -v jq &>/dev/null; then
-    local base_url=""
-    base_url=$(jq -r '.env.ANTHROPIC_BASE_URL // empty' "$settings" 2>/dev/null) || true
-    [[ -n "$base_url" ]] && return 0
+    local helper=""
+    helper=$(jq -r '.apiKeyHelper // empty' "$settings" 2>/dev/null) || true
+    [[ -n "$helper" ]] && return 0
     return 1
   fi
-  grep -q "ANTHROPIC_BASE_URL" "$settings" 2>/dev/null
+  grep -q "apiKeyHelper" "$settings" 2>/dev/null
 }
 
 # ── Parse flags ──────────────────────────────────────────────────────────────

@@ -14,7 +14,8 @@ discover_config() {
   CFG_SETTINGS_FILE="" CFG_HELPER_FILE=""
 
   # Find the first settings file with FMAPI config
-  for candidate in "$HOME/.claude/settings.json" "./.claude/settings.json"; do
+  agent_settings_candidates
+  for candidate in "${_SETTINGS_CANDIDATES[@]}"; do
     [[ -f "$candidate" ]] || continue
     local abs_path=""
     abs_path=$(cd "$(dirname "$candidate")" && echo "$(pwd)/$(basename "$candidate")")
@@ -35,15 +36,8 @@ discover_config() {
       if [[ -z "$CFG_HOST" ]]; then CFG_HOST=$(sed -n 's/^HOST="\(.*\)"/\1/p' "$helper" 2>/dev/null | head -1) || true; fi
     fi
 
-    # Parse model names from settings.json env block
-    CFG_MODEL=$(jq -r '.env.ANTHROPIC_MODEL // empty' "$abs_path" 2>/dev/null) || true
-    CFG_OPUS=$(jq -r '.env.ANTHROPIC_DEFAULT_OPUS_MODEL // empty' "$abs_path" 2>/dev/null) || true
-    CFG_SONNET=$(jq -r '.env.ANTHROPIC_DEFAULT_SONNET_MODEL // empty' "$abs_path" 2>/dev/null) || true
-    CFG_HAIKU=$(jq -r '.env.ANTHROPIC_DEFAULT_HAIKU_MODEL // empty' "$abs_path" 2>/dev/null) || true
-
-    local cfg_ttl_ms=""
-    cfg_ttl_ms=$(jq -r '.env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS // empty' "$abs_path" 2>/dev/null) || true
-    [[ -n "$cfg_ttl_ms" ]] && CFG_TTL=$(( cfg_ttl_ms / 60000 ))
+    # Parse model names and TTL from settings.json env block
+    agent_read_env "$abs_path"
 
     # Detect AI Gateway v2 from ANTHROPIC_BASE_URL
     local cfg_base_url=""
