@@ -13,6 +13,7 @@ AGENT_CLI_INSTALL_CMD="curl -fsSL https://claude.ai/install.sh | bash"
 AGENT_SETTINGS_DIR=".claude"
 AGENT_SETTINGS_FILENAME="settings.json"
 AGENT_HELPER_FILENAME="fmapi-key-helper.sh"
+AGENT_HOOK_PRECHECK_FILENAME="fmapi-auth-precheck.sh"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 AGENT_DEFAULT_PROFILE="fmapi-claudecode-profile"

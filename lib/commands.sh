@@ -61,10 +61,38 @@ do_status() {
   fi
   echo ""
 
+  # ── Hooks ────────────────────────────────────────────────────────────────
+  echo -e "  ${BOLD}Hooks${RESET}"
+  local hook_file=""
+  # Search both SubagentStart and UserPromptSubmit for FMAPI hook (new or legacy name)
+  hook_file=$(jq -r '
+    [(.hooks.SubagentStart // [])[], (.hooks.UserPromptSubmit // [])[]]
+    | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any)
+    | .hooks[0].command
+  ' "$CFG_SETTINGS_FILE" 2>/dev/null | head -1) || true
+
+  for hook_type in SubagentStart UserPromptSubmit; do
+    local hook_cmd=""
+    hook_cmd=$(jq -r --arg ht "$hook_type" '
+      [.hooks[$ht][]? | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any) | .hooks[0].command] | first // empty
+    ' "$CFG_SETTINGS_FILE" 2>/dev/null) || true
+    if [[ -n "$hook_cmd" && -x "$hook_cmd" ]]; then
+      echo -e "  ${GREEN}${BOLD}ENABLED${RESET}  ${hook_type} pre-check"
+    elif [[ -n "$hook_cmd" ]]; then
+      echo -e "  ${YELLOW}${BOLD}WARN${RESET}     ${hook_type} hook configured but script missing or not executable"
+    else
+      echo -e "  ${DIM}DISABLED${RESET} ${hook_type} pre-check  ${DIM}(re-run setup to enable)${RESET}"
+    fi
+  done
+  echo ""
+
   # ── File locations ────────────────────────────────────────────────────────
   echo -e "  ${BOLD}Files${RESET}"
   echo -e "  ${DIM}Settings${RESET}   ${CFG_SETTINGS_FILE}"
   echo -e "  ${DIM}Helper${RESET}     ${CFG_HELPER_FILE}"
+  if [[ -n "$hook_file" ]]; then
+    echo -e "  ${DIM}Hook${RESET}       ${hook_file}"
+  fi
   echo ""
 }
 
@@ -105,6 +133,7 @@ do_uninstall() {
   local default_install_dir="${HOME}/.fmapi-codingagent-setup"
 
   declare -a helper_scripts=()
+  declare -a hook_scripts=()
   declare -a settings_files=()
 
   # Try to discover any custom settings location from existing config
@@ -142,6 +171,18 @@ do_uninstall() {
       fi
     fi
 
+    # Check for FMAPI-managed hook scripts in SubagentStart and UserPromptSubmit hooks
+    local _hook_cmds=""
+    _hook_cmds=$(jq -r '[(.hooks.SubagentStart // [])[], (.hooks.UserPromptSubmit // [])[] | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any) | .hooks[]?.command] | unique[]' "$abs_path" 2>/dev/null) || true
+    if [[ -n "$_hook_cmds" ]]; then
+      while IFS= read -r hook_cmd; do
+        [[ -z "$hook_cmd" ]] && continue
+        if [[ -f "$hook_cmd" ]] && ! array_contains "$hook_cmd" ${hook_scripts[@]+"${hook_scripts[@]}"}; then
+          hook_scripts+=("$hook_cmd")
+        fi
+      done <<< "$_hook_cmds"
+    fi
+
     # Check for old-style _fmapi_meta (backward compat)
     if jq -e '._fmapi_meta' "$abs_path" &>/dev/null; then
       has_fmapi=true
@@ -153,7 +194,7 @@ do_uninstall() {
   done
 
   # ── Early exit if nothing found ──────────────────────────────────────────
-  if [[ ${#helper_scripts[@]} -eq 0 && ${#settings_files[@]} -eq 0 && ! -d "$default_install_dir" ]]; then
+  if [[ ${#helper_scripts[@]} -eq 0 && ${#hook_scripts[@]} -eq 0 && ${#settings_files[@]} -eq 0 && ! -d "$default_install_dir" ]]; then
     info "Nothing to uninstall. No FMAPI artifacts found."
     exit 0
   fi
@@ -164,6 +205,14 @@ do_uninstall() {
   if [[ ${#helper_scripts[@]} -gt 0 ]]; then
     echo -e "  ${CYAN}Helper scripts:${RESET}"
     for hs in "${helper_scripts[@]}"; do
+      echo -e "    ${DIM}${hs}${RESET}"
+    done
+    echo ""
+  fi
+
+  if [[ ${#hook_scripts[@]} -gt 0 ]]; then
+    echo -e "  ${CYAN}Hook scripts:${RESET}"
+    for hs in "${hook_scripts[@]}"; do
       echo -e "    ${DIM}${hs}${RESET}"
     done
     echo ""
@@ -200,6 +249,12 @@ do_uninstall() {
     success "Deleted ${hs}."
   done
 
+  # ── Delete hook scripts ────────────────────────────────────────────────
+  for hs in "${hook_scripts[@]}"; do
+    rm -f "$hs"
+    success "Deleted ${hs}."
+  done
+
   # ── Clean up legacy cache files next to helper scripts ──────────────────
   for hs in "${helper_scripts[@]}"; do
     local cache_file=""
@@ -223,6 +278,20 @@ do_uninstall() {
       | del(._fmapi_meta)
       | del(.apiKeyHelper)
       | if .env == {} then del(.env) else . end
+      # Remove FMAPI hook entries (match both new and legacy filenames), preserve user hooks
+      | if .hooks.SubagentStart then
+          .hooks.SubagentStart = [.hooks.SubagentStart[]
+            | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any | not)
+          ]
+        else . end
+      | if .hooks.SubagentStart == [] or .hooks.SubagentStart == null then del(.hooks.SubagentStart) else . end
+      | if .hooks.UserPromptSubmit then
+          .hooks.UserPromptSubmit = [.hooks.UserPromptSubmit[]
+            | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any | not)
+          ]
+        else . end
+      | if .hooks.UserPromptSubmit == [] or .hooks.UserPromptSubmit == null then del(.hooks.UserPromptSubmit) else . end
+      | if .hooks == {} or .hooks == null then del(.hooks) else . end
     ' "$sf" > "$tmpfile"
     chmod 600 "$tmpfile"
 
@@ -545,6 +614,40 @@ _doctor_models() {
   [[ "$models_ok" == true ]]
 }
 
+_doctor_hooks() {
+  echo -e "  ${BOLD}Hooks${RESET}"
+  local hooks_ok=true
+
+  if [[ "$CFG_FOUND" != true ]]; then
+    echo -e "  ${YELLOW}${BOLD}SKIP${RESET}  No configuration found"
+    echo ""
+    return 0
+  fi
+
+  for hook_type in SubagentStart UserPromptSubmit; do
+    local hook_cmd=""
+    hook_cmd=$(jq -r --arg ht "$hook_type" '
+      [.hooks[$ht][]? | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any) | .hooks[0].command] | first // empty
+    ' "$CFG_SETTINGS_FILE" 2>/dev/null) || true
+
+    if [[ -z "$hook_cmd" ]]; then
+      echo -e "  ${YELLOW}${BOLD}WARN${RESET}  ${hook_type} hook not configured  ${DIM}Fix: re-run setup${RESET}"
+      hooks_ok=false
+    elif [[ ! -f "$hook_cmd" ]]; then
+      echo -e "  ${RED}${BOLD}FAIL${RESET}  ${hook_type} hook script not found: ${hook_cmd}  ${DIM}Fix: re-run setup${RESET}"
+      hooks_ok=false
+    elif [[ ! -x "$hook_cmd" ]]; then
+      echo -e "  ${RED}${BOLD}FAIL${RESET}  ${hook_type} hook script not executable  ${DIM}Fix: chmod 700 ${hook_cmd}${RESET}"
+      hooks_ok=false
+    else
+      echo -e "  ${GREEN}${BOLD}PASS${RESET}  ${hook_type} pre-check hook  ${DIM}${hook_cmd}${RESET}"
+    fi
+  done
+
+  echo ""
+  [[ "$hooks_ok" == true ]]
+}
+
 do_self_update() {
   require_cmd git "git is required for self-update. Install git first."
 
@@ -623,6 +726,7 @@ do_doctor() {
   _doctor_auth || any_fail=true
   _doctor_connectivity || any_fail=true
   _doctor_models || any_fail=true
+  _doctor_hooks || any_fail=true
 
   # ── Summary ──────────────────────────────────────────────────────────────
   if [[ "$any_fail" == true ]]; then

@@ -21,6 +21,7 @@ lib/
   setup.sh                                         # Setup workflow (gather, install, auth, write, smoke test)
 templates/
   fmapi-key-helper.sh.template                     # POSIX helper script template with __PROFILE__, __HOST__, __SETUP_SCRIPT__ placeholders
+  fmapi-auth-precheck.sh.template                   # POSIX auth pre-check hook template with __PROFILE__, __HOST__ placeholders
 example-config.json                                # Example config file for --config / --config-url
 .claude-plugin/plugin.json                         # Claude Code plugin manifest
 skills/fmapi-codingagent-status/SKILL.md           # /fmapi-codingagent-status skill
@@ -66,7 +67,8 @@ The plugin is automatically registered in `~/.claude/plugins/installed_plugins.j
 - **`.claude-plugin/plugin.json`** — Plugin manifest that registers the repo as a Claude Code plugin with the `skills/` directory.
 - **`skills/*/SKILL.md`** — Skill definitions that instruct Claude how to invoke the setup script with the appropriate flags.
 - **`fmapi-key-helper.sh`** — A POSIX `/bin/sh` script generated alongside `settings.json` that Claude Code invokes automatically via the `apiKeyHelper` setting to obtain OAuth access tokens on demand. The Databricks CLI handles token refresh transparently.
-- **`.claude/settings.json`** — Claude Code configuration file containing `apiKeyHelper` (path to helper script) and environment variables that route requests through Databricks FMAPI.
+- **`fmapi-auth-precheck.sh`** — A POSIX `/bin/sh` script registered as both a `SubagentStart` and `UserPromptSubmit` hook in `settings.json`. Runs before every subagent launch and user prompt to verify the OAuth token is still valid. Reads `hook_event_name` from stdin JSON for hook-aware output. If expired, attempts browser-based re-auth (or warns in headless environments). Always exits 0 (non-blocking).
+- **`.claude/settings.json`** — Claude Code configuration file containing `apiKeyHelper` (path to helper script), `hooks` (SubagentStart and UserPromptSubmit pre-checks), and environment variables that route requests through Databricks FMAPI.
 
 ## Module Architecture
 
@@ -79,8 +81,8 @@ The setup script is split into an agent adapter and six sourced library modules.
 | `lib/help.sh` | `show_help()` — help text using `$AGENT_*` variables for agent-specific values |
 | `lib/config.sh` | `discover_config()`, `_CONFIG_VALID_KEYS`, `load_config_file()`, `load_config_url()` |
 | `lib/shared.sh` | `_get_oauth_token()`, `_detect_workspace_id()`, `_build_base_url()`, `_fetch_endpoints()`, `_validate_models_report()`, `_display_agent_endpoints()`, plus shared helpers: `_is_headless()`, `_require_fmapi_config()`, `_require_valid_oauth()` |
-| `lib/commands.sh` | `do_status()`, `do_reauth()`, `do_uninstall()`, `do_list_models()`, `do_validate_models()`, `do_self_update()`, `do_doctor()` (with `_doctor_*` sub-functions) |
-| `lib/setup.sh` | `gather_config_pre_auth()`, `gather_config_models()`, `install_dependencies()`, `authenticate()`, `resolve_workspace_id()`, `write_settings()`, `write_helper()`, `run_smoke_test()`, `print_summary()`, `print_dry_run_plan()`, `do_setup()` |
+| `lib/commands.sh` | `do_status()`, `do_reauth()`, `do_uninstall()`, `do_list_models()`, `do_validate_models()`, `do_self_update()`, `do_doctor()` (with `_doctor_*` sub-functions including `_doctor_hooks()`) |
+| `lib/setup.sh` | `gather_config_pre_auth()`, `gather_config_models()`, `install_dependencies()`, `authenticate()`, `resolve_workspace_id()`, `write_settings()`, `write_helper()`, `write_hooks()`, `run_smoke_test()`, `print_summary()`, `print_dry_run_plan()`, `do_setup()` |
 
 Key shared helpers that deduplicate repeated patterns:
 - **`_install_hint(cmd)`** — Platform-appropriate install hint for any dependency (jq, databricks, agent CLI, curl). Uses `AGENT_CLI_CMD` and `AGENT_CLI_INSTALL_CMD` for the agent's CLI.
@@ -105,6 +107,7 @@ Each agent gets its own adapter file under `agents/` that defines the full set o
 | `AGENT_SETTINGS_DIR` | `".claude"` | Settings directory name |
 | `AGENT_SETTINGS_FILENAME` | `"settings.json"` | Settings filename |
 | `AGENT_HELPER_FILENAME` | `"fmapi-key-helper.sh"` | Helper script filename |
+| `AGENT_HOOK_PRECHECK_FILENAME` | `"fmapi-auth-precheck.sh"` | Auth pre-check hook script filename |
 | `AGENT_DEFAULT_PROFILE` | `"fmapi-claudecode-profile"` | Default Databricks CLI profile name |
 | `AGENT_DEFAULT_MODEL` | `"databricks-claude-opus-4-6"` | Default primary model |
 | `AGENT_DEFAULT_OPUS` | `"databricks-claude-opus-4-6"` | Default opus model |
@@ -248,6 +251,13 @@ There are no automated tests. To verify changes:
 48. Run on WSL — verify `_IS_WSL` is `true` and `_WSL_VERSION` is detected correctly.
 49. Run `--doctor` on WSL — verify Environment section shows WSL version, distro, and "(experimental)".
 50. On WSL without `wslu` or `xdg-open`, run setup — verify browser opener warning appears.
+51. Run `bash setup-fmapi-claudecode.sh --dry-run --host https://example.com` — verify "Hooks" section in dry-run output shows both SubagentStart and UserPromptSubmit.
+52. Run full setup — verify `~/.claude/fmapi-auth-precheck.sh` is created with `chmod 700`.
+53. Verify `~/.claude/settings.json` has both `hooks.SubagentStart` and `hooks.UserPromptSubmit` sections with correct command path.
+54. Run `bash setup-fmapi-claudecode.sh --status` — verify Hooks section shows "ENABLED" for both SubagentStart and UserPromptSubmit pre-check.
+55. Run `bash setup-fmapi-claudecode.sh --doctor` — verify Hooks section passes for both hook types.
+56. Re-run setup — verify idempotency (no duplicate hook entries in settings.json, legacy `fmapi-subagent-precheck` entries cleaned up).
+57. Run `bash setup-fmapi-claudecode.sh --uninstall` — verify hook script deleted and both hooks sections removed from settings.json.
 
 ## Abbreviations
 

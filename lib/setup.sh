@@ -138,6 +138,7 @@ gather_config_pre_auth() {
 
   SETTINGS_FILE="${SETTINGS_BASE}/${AGENT_SETTINGS_DIR}/${AGENT_SETTINGS_FILENAME}"
   HELPER_FILE="${SETTINGS_BASE}/${AGENT_SETTINGS_DIR}/${AGENT_HELPER_FILENAME}"
+  HOOK_FILE="${SETTINGS_BASE}/${AGENT_SETTINGS_DIR}/${AGENT_HOOK_PRECHECK_FILENAME}"
 
   debug "gather_config_pre_auth: host=${DATABRICKS_HOST} profile=${DATABRICKS_PROFILE}"
   debug "gather_config_pre_auth: settings=${SETTINGS_FILE} helper=${HELPER_FILE}"
@@ -370,6 +371,83 @@ write_helper() {
   success "Helper script written to ${HELPER_FILE}."
 }
 
+write_hooks() {
+  [[ "$VERBOSITY" -ge 1 ]] && echo -e "\n${BOLD}Auth pre-check hooks${RESET}"
+
+  local template="${SCRIPT_DIR}/templates/fmapi-auth-precheck.sh.template"
+
+  if [[ ! -f "$template" ]]; then
+    error "Hook template not found: ${template}"
+    exit 1
+  fi
+
+  # Clean up legacy hook script if it exists under old name
+  local legacy_hook="${HOOK_FILE%/*}/fmapi-subagent-precheck.sh"
+  if [[ -f "$legacy_hook" && "$legacy_hook" != "$HOOK_FILE" ]]; then
+    rm -f "$legacy_hook"
+    debug "write_hooks: removed legacy hook script ${legacy_hook}"
+  fi
+
+  # Generate hook script from template
+  local hook_tmp=""
+  hook_tmp=$(mktemp "${HOOK_FILE}.XXXXXX")
+  _CLEANUP_FILES+=("$hook_tmp")
+  sed "s|__PROFILE__|${DATABRICKS_PROFILE}|g; s|__HOST__|${DATABRICKS_HOST}|g" "$template" > "$hook_tmp"
+  mv "$hook_tmp" "$HOOK_FILE"
+  chmod 700 "$HOOK_FILE"
+  debug "write_hooks: wrote ${HOOK_FILE} (profile=${DATABRICKS_PROFILE}, host=${DATABRICKS_HOST})"
+  success "Hook script written to ${HOOK_FILE}."
+
+  # Merge hooks section into settings.json — register under both SubagentStart and UserPromptSubmit
+  local hooks_json=""
+  hooks_json=$(jq -n --arg cmd "$HOOK_FILE" '{
+    "hooks": {
+      "SubagentStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": $cmd
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": $cmd
+            }
+          ]
+        }
+      ]
+    }
+  }')
+
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    local tmpfile=""
+    tmpfile=$(mktemp "${SETTINGS_FILE}.XXXXXX")
+    _CLEANUP_FILES+=("$tmpfile")
+    # Remove FMAPI hook entries (match both new and legacy filenames), preserve user hooks, then append ours
+    jq --argjson new_hooks "$hooks_json" '
+      .hooks.SubagentStart = [
+        (.hooks.SubagentStart // [])[]
+        | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any | not)
+      ]
+      | .hooks.SubagentStart += $new_hooks.hooks.SubagentStart
+      | .hooks.UserPromptSubmit = [
+        (.hooks.UserPromptSubmit // [])[]
+        | select([(.hooks // [])[].command // "" | test("fmapi-auth-precheck|fmapi-subagent-precheck")] | any | not)
+      ]
+      | .hooks.UserPromptSubmit += $new_hooks.hooks.UserPromptSubmit
+    ' "$SETTINGS_FILE" > "$tmpfile"
+    chmod 600 "$tmpfile"
+    mv "$tmpfile" "$SETTINGS_FILE"
+  fi
+  debug "write_hooks: merged hooks section into ${SETTINGS_FILE}"
+}
+
 run_smoke_test() {
   [[ "$VERBOSITY" -ge 1 ]] && echo -e "\n${BOLD}Verifying setup${RESET}"
 
@@ -470,6 +548,7 @@ print_summary() {
   fi
   echo -e "  ${DIM}Auth${RESET}       ${BOLD}OAuth (auto-refresh, ${FMAPI_TTL_MINUTES}m check interval)${RESET}"
   echo -e "  ${DIM}Helper${RESET}     ${BOLD}${HELPER_FILE}${RESET}"
+  echo -e "  ${DIM}Hook${RESET}       ${BOLD}${HOOK_FILE}${RESET}"
   echo -e "  ${DIM}Settings${RESET}   ${BOLD}${SETTINGS_FILE}${RESET}"
   echo -e "\n  Run ${CYAN}${BOLD}${AGENT_CLI_CMD}${RESET} to start.\n"
 }
@@ -544,6 +623,17 @@ print_dry_run_plan() {
   else
     echo -e "       ${DIM}(would be created)${RESET}"
   fi
+
+  # Hooks
+  echo -e "\n  ${BOLD}Hooks${RESET}"
+  echo -e "  ${CYAN}::${RESET}  Auth pre-check script: ${BOLD}${HOOK_FILE}${RESET}"
+  if [[ -f "$HOOK_FILE" ]]; then
+    echo -e "       ${DIM}(exists — would be overwritten)${RESET}"
+  else
+    echo -e "       ${DIM}(would be created)${RESET}"
+  fi
+  echo -e "  ${CYAN}::${RESET}  Registered for: ${BOLD}SubagentStart${RESET}, ${BOLD}UserPromptSubmit${RESET}"
+
   echo -e "\n  ${DIM}No changes were made. Remove --dry-run to run setup.${RESET}\n"
 }
 
@@ -640,6 +730,7 @@ do_setup() {
   write_settings
   agent_ensure_onboarding
   write_helper
+  write_hooks
   agent_register_plugin "$SCRIPT_DIR"
   run_smoke_test
   print_summary
