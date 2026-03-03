@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth.databricks import has_databricks_cli
+from fmapi_opskit.auth import has_databricks_cli
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.ui import logging as log
 

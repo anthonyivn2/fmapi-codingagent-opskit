@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fmapi_opskit.core.version import get_version
+from fmapi_opskit.core import get_version
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import subprocess
 
-from fmapi_opskit.auth.oauth import get_oauth_token
-from fmapi_opskit.network.connectivity import check_http_reachable
-from fmapi_opskit.network.endpoints import fetch_endpoints, validate_model
+from fmapi_opskit.auth import get_oauth_token
+from fmapi_opskit.network import check_http_reachable, fetch_endpoints, validate_model
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 from fmapi_opskit.ui.tables import display_model_validation

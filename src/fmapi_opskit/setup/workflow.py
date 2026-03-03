@@ -6,22 +6,25 @@ import sys
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
+from fmapi_opskit.auth import authenticate, cleanup_legacy_cache
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.config.models import FileConfig, FmapiConfig
-from fmapi_opskit.core.platform import PlatformInfo
-from fmapi_opskit.network.endpoints import fetch_endpoints, filter_agent_endpoints
-from fmapi_opskit.network.gateway import detect_workspace_id
-from fmapi_opskit.setup.authenticate import authenticate, cleanup_legacy_cache
+from fmapi_opskit.core import PlatformInfo
+from fmapi_opskit.network import (
+    build_base_url,
+    detect_workspace_id,
+    fetch_endpoints,
+    filter_agent_endpoints,
+)
 from fmapi_opskit.setup.gather import (
     gather_config_models,
     gather_config_pre_auth,
 )
 from fmapi_opskit.setup.install_deps import install_dependencies
 from fmapi_opskit.setup.smoke_test import run_smoke_test
-from fmapi_opskit.setup.summary import print_summary
 from fmapi_opskit.setup.writer import write_helper, write_hooks, write_settings
 from fmapi_opskit.ui import logging as log
-from fmapi_opskit.ui.console import get_console
+from fmapi_opskit.ui.console import get_console, get_verbosity
 from fmapi_opskit.ui.dry_run import display_dry_run_plan
 from fmapi_opskit.ui.prompts import select_option
 from fmapi_opskit.ui.tables import display_agent_endpoints
@@ -218,7 +221,7 @@ def do_setup(
         workspace_id=workspace_id,
     )
 
-    print_summary(
+    _print_summary(
         adapter,
         host=gather.host,
         profile=gather.profile,
@@ -264,3 +267,51 @@ def _show_reuse_summary(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
         ],
     )
     return choice == 0
+
+
+def _print_summary(
+    adapter: AgentAdapter,
+    *,
+    host: str,
+    profile: str,
+    model: str,
+    opus: str,
+    sonnet: str,
+    haiku: str,
+    ttl_minutes: str,
+    ai_gateway_enabled: bool,
+    workspace_id: str,
+    helper_file: str,
+    hook_file: str,
+    settings_file: str,
+) -> None:
+    """Print the post-setup summary."""
+    if get_verbosity() < 1:
+        return
+
+    console = get_console()
+    c = adapter.config
+
+    console.print("\n[success]  Setup complete![/success]")
+    console.print(f"  [dim]Workspace[/dim]  [bold]{host}[/bold]")
+    console.print(f"  [dim]Profile[/dim]    [bold]{profile}[/bold]")
+    console.print(f"  [dim]Model[/dim]      [bold]{model}[/bold]")
+    console.print(f"  [dim]Opus[/dim]       [bold]{opus}[/bold]")
+    console.print(f"  [dim]Sonnet[/dim]     [bold]{sonnet}[/bold]")
+    console.print(f"  [dim]Haiku[/dim]      [bold]{haiku}[/bold]")
+
+    if ai_gateway_enabled:
+        gw_url = build_base_url(host, True, workspace_id)
+        console.print("  [dim]Routing[/dim]    [bold]AI Gateway v2 (beta)[/bold]")
+        console.print(f"  [dim]Workspace ID[/dim] [bold]{workspace_id}[/bold]")
+        console.print(f"  [dim]Base URL[/dim]   [bold]{gw_url}[/bold]")
+    else:
+        console.print("  [dim]Routing[/dim]    [bold]Serving Endpoints (v1)[/bold]")
+
+    console.print(
+        f"  [dim]Auth[/dim]       [bold]OAuth (auto-refresh, {ttl_minutes}m check interval)[/bold]"
+    )
+    console.print(f"  [dim]Helper[/dim]     [bold]{helper_file}[/bold]")
+    console.print(f"  [dim]Hook[/dim]       [bold]{hook_file}[/bold]")
+    console.print(f"  [dim]Settings[/dim]   [bold]{settings_file}[/bold]")
+    console.print(f"\n  Run [info][bold]{c.cli_cmd}[/bold][/info] to start.\n")

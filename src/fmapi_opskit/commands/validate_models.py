@@ -5,10 +5,10 @@ from __future__ import annotations
 import sys
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth.oauth import check_oauth_status
+from fmapi_opskit.auth import check_oauth_status
 from fmapi_opskit.commands._common import require_fmapi_config
 from fmapi_opskit.config.discovery import discover_config
-from fmapi_opskit.network.endpoints import fetch_endpoints, validate_model
+from fmapi_opskit.network import fetch_endpoints, validate_model
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 from fmapi_opskit.ui.tables import display_model_validation

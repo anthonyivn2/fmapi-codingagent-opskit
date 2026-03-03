@@ -6,17 +6,17 @@ import shutil
 import sys
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth.databricks import auth_login, has_databricks_cli
-from fmapi_opskit.auth.oauth import check_oauth_status
+from fmapi_opskit.auth import auth_login, check_oauth_status
+from fmapi_opskit.commands._common import require_fmapi_config
 from fmapi_opskit.config.discovery import discover_config
-from fmapi_opskit.core.platform import PlatformInfo
+from fmapi_opskit.core import PlatformInfo
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 
 
 def do_reauth(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
     """Re-authenticate Databricks OAuth session."""
-    _require_fmapi_config(adapter, "reauth")
+    require_fmapi_config(adapter, "reauth")
     cfg = discover_config(adapter)
 
     if platform_info.is_headless:
@@ -48,20 +48,4 @@ def do_reauth(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
             f"Re-authentication failed. Try manually: "
             f"databricks auth login --host {cfg.host} --profile {cfg.profile}"
         )
-        sys.exit(1)
-
-
-def _require_fmapi_config(adapter: AgentAdapter, caller: str) -> None:
-    """Common preamble: require databricks CLI, discover config, validate."""
-
-    if not has_databricks_cli():
-        log.error(f"Databricks CLI is required for {caller}.")
-        sys.exit(1)
-
-    cfg = discover_config(adapter)
-    if not cfg.found:
-        log.error("No FMAPI configuration found. Run setup first.")
-        sys.exit(1)
-    if not cfg.profile:
-        log.error("Could not determine profile from helper script.")
         sys.exit(1)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rich.table import Table
 
-from fmapi_opskit.network.endpoints import get_endpoint_state
+from fmapi_opskit.network import get_endpoint_state
 from fmapi_opskit.ui.console import get_console
 
 

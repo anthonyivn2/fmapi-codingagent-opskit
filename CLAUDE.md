@@ -13,13 +13,12 @@ install.sh                                         # Bootstrap installer for bas
 src/fmapi_opskit/
   __init__.py                                      # Package init
   cli.py                                           # Typer app: callback (global + setup flags) + 8 subcommands
+  auth.py                                          # Databricks CLI wrappers, OAuth tokens, auth flow, legacy PAT cleanup
+  core.py                                          # Version, PlatformInfo, deps (Xcode CLT, Python, install hints)
+  network.py                                       # HTTP reachability, endpoint fetch/filter/validate, gateway URLs
   agents/
     base.py                                        # AgentConfig dataclass + AgentAdapter Protocol
     claudecode.py                                  # ClaudeCodeAdapter implementation
-  core/
-    version.py                                     # Read VERSION file
-    platform.py                                    # OS/WSL/headless detection
-    deps.py                                        # require_cmd, install_hint, Xcode CLT + Python detection
   config/
     models.py                                      # FmapiConfig dataclass, VALID_CONFIG_KEYS
     discovery.py                                   # discover_config: search settings, parse helper, read env
@@ -27,13 +26,6 @@ src/fmapi_opskit/
   settings/
     manager.py                                     # SettingsManager: read/write/merge settings.json
     hooks.py                                       # Hook merge/cleanup/uninstall logic
-  auth/
-    databricks.py                                  # Typed subprocess wrappers for databricks CLI
-    oauth.py                                       # get_oauth_token, auth_login, check_oauth_status
-  network/
-    endpoints.py                                   # Fetch/filter serving endpoints via databricks CLI
-    connectivity.py                                # HTTP reachability checks (urllib)
-    gateway.py                                     # build_base_url, detect_workspace_id, detect_gateway_from_url
   commands/
     _common.py                                     # Shared command preamble helpers
     status.py                                      # Status dashboard
@@ -46,11 +38,9 @@ src/fmapi_opskit/
   setup/
     gather.py                                      # gather_config_pre_auth, gather_config_models
     install_deps.py                                # Platform-specific dependency installation
-    authenticate.py                                # OAuth flow, legacy PAT cleanup
     writer.py                                      # write_settings, write_helper, write_hooks
     smoke_test.py                                  # Post-setup verification
-    summary.py                                     # print_summary, print_dry_run_plan
-    workflow.py                                    # do_setup orchestrator
+    workflow.py                                    # do_setup orchestrator + print_summary
   ui/
     console.py                                     # Rich Console factory with theme, NO_COLOR/pipe handling
     logging.py                                     # info, success, warn, error, debug (Rich-based)
@@ -112,7 +102,7 @@ The plugin is automatically registered in `~/.claude/plugins/installed_plugins.j
 
 - **`setup-fmapi-claudecode`** — Global CLI command installed via `uv tool install`. Provides subcommands (`status`, `reauth`, `doctor`, `list-models`, `validate-models`, `self-update`, `uninstall`, `reinstall`) and runs setup when invoked with no subcommand. Passing `--host`, `--config`, or `--config-url` enables non-interactive mode.
 - **`install.sh`** — Bootstrap installer for `bash <(curl ...)` one-liner. Clones the repo, installs `uv` if needed, and runs `uv tool install` to make the CLI globally available. Idempotent: re-running updates an existing clone. Supports `--branch` and `--agent` flags.
-- **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `core/version.py`. Falls back to `dev` if missing.
+- **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `core.py`. Falls back to `dev` if missing.
 - **`example-config.json`** — Example JSON config file showing all supported keys. Priority chain: CLI flags > config file > existing settings > hardcoded defaults.
 - **`.claude-plugin/plugin.json`** — Plugin manifest that registers the repo as a Claude Code plugin with the `skills/` directory.
 - **`fmapi-key-helper.sh`** — A POSIX `/bin/sh` script generated alongside `settings.json` that Claude Code invokes via `apiKeyHelper` to obtain OAuth access tokens on demand.

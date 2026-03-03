@@ -15,8 +15,7 @@ from fmapi_opskit.config.loader import (
     load_config_file,
     load_config_url,
 )
-from fmapi_opskit.core.platform import detect_platform
-from fmapi_opskit.core.version import get_version
+from fmapi_opskit.core import detect_platform, get_version
 from fmapi_opskit.ui.console import init_console
 
 app = typer.Typer(
@@ -255,7 +254,7 @@ def reinstall() -> None:
     adapter = _get_adapter()
     platform_info = _get_platform()
 
-    from fmapi_opskit.auth.databricks import has_databricks_cli
+    from fmapi_opskit.auth import has_databricks_cli
     from fmapi_opskit.config.discovery import discover_config
     from fmapi_opskit.setup.workflow import do_setup
     from fmapi_opskit.ui import logging as log

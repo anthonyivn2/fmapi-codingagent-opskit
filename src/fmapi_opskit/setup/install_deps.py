@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.core.platform import PlatformInfo
+from fmapi_opskit.core import PlatformInfo
 from fmapi_opskit.ui import logging as log
 
 

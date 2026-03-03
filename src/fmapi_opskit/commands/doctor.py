@@ -10,21 +10,19 @@ import sys
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth.databricks import has_databricks_cli
-from fmapi_opskit.auth.oauth import check_oauth_status, get_oauth_token
+from fmapi_opskit.auth import check_oauth_status, get_oauth_token, has_databricks_cli
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.config.models import FmapiConfig
-from fmapi_opskit.core.deps import (
+from fmapi_opskit.core import (
+    PlatformInfo,
     check_xcode_clt_installed,
     detect_python_version,
     get_cmd_version,
+    get_version,
     get_xcode_clt_path,
     install_hint,
 )
-from fmapi_opskit.core.platform import PlatformInfo
-from fmapi_opskit.core.version import get_version
-from fmapi_opskit.network.connectivity import check_http_reachable
-from fmapi_opskit.network.endpoints import fetch_endpoints, validate_model
+from fmapi_opskit.network import check_http_reachable, fetch_endpoints, validate_model
 from fmapi_opskit.settings.hooks import get_fmapi_hook_command
 from fmapi_opskit.ui.console import get_console
 from fmapi_opskit.ui.tables import display_model_validation

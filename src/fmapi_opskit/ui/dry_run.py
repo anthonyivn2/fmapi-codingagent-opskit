@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.network.gateway import build_base_url
+from fmapi_opskit.network import build_base_url
 from fmapi_opskit.ui.console import get_console
 
 

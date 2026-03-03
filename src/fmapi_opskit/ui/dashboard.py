@@ -7,10 +7,10 @@ import os
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth.oauth import check_oauth_status
+from fmapi_opskit.auth import check_oauth_status
 from fmapi_opskit.config.models import FmapiConfig
-from fmapi_opskit.core.version import get_version
-from fmapi_opskit.network.gateway import build_base_url
+from fmapi_opskit.core import get_version
+from fmapi_opskit.network import build_base_url
 from fmapi_opskit.settings.hooks import get_fmapi_hook_command
 from fmapi_opskit.ui.console import get_console
 
@@ -44,7 +44,7 @@ def display_status_dashboard(cfg: FmapiConfig, adapter: AgentAdapter) -> None:
 
     # Auth
     console.print("  [bold]Auth[/bold]")
-    from fmapi_opskit.auth.databricks import has_databricks_cli
+    from fmapi_opskit.auth import has_databricks_cli
 
     if cfg.profile and has_databricks_cli():
         if check_oauth_status(cfg.profile):
