@@ -10,24 +10,22 @@ List all serving endpoints available in your Databricks workspace to discover mo
 
 ## Instructions
 
-1. Determine the install path of this plugin. This SKILL.md file is located at `<install-path>/skills/fmapi-codingagent-list-models/SKILL.md`, so the setup script is two directories up at `<install-path>/setup-fmapi-claudecode.sh`.
-
-2. Run the list-models command:
+1. Run the list-models command:
 
 ```bash
-bash "<install-path>/setup-fmapi-claudecode.sh" --list-models
+setup-fmapi-claudecode list-models
 ```
 
-3. Present the output to the user. The command displays a table of all serving endpoints with:
+2. Present the output to the user. The command displays a table of all serving endpoints with:
 
    - **ENDPOINT NAME** — The name of the serving endpoint
    - **STATE** — Whether the endpoint is READY or NOT_READY
    - **TYPE** — The endpoint type
 
-4. The table uses visual markers:
+3. The table uses visual markers:
    - **`>` (green)** — Currently configured model (in your settings)
 
-5. If the command fails:
+4. If the command fails:
    - **No config found**: suggest `/fmapi-codingagent-setup` first
    - **OAuth expired**: suggest `/fmapi-codingagent-reauth`
    - **No endpoints found**: the workspace may not have FMAPI enabled

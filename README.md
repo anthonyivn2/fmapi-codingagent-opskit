@@ -11,19 +11,19 @@ Databricks serves frontier and open-source LLMs through its [Foundation Model AP
 - **Leverage Popular Coding Agents against models hosted in your Databricks workspace** &mdash; route all API calls through Databricks Foundation Model API
 - **One-command setup** &mdash; installs dependencies, authenticates via OAuth, and configures everything
 - **Automatic OAuth token management** &mdash; no PATs to rotate or manage
-- **Built-in diagnostics and model validation** &mdash; `--doctor`, `--list-models`, `--validate-models`
+- **Built-in diagnostics and model validation** &mdash; `doctor`, `list-models`, `validate-models`
 - **Plugin slash commands** &mdash; manage your FMAPI config without leaving Claude Code
 - **Built-in Usage Tracking and Payload Logging through Databricks AI Gateway** &mdash; Leverage Databricks's [AI Gateway Usage Tracking](https://docs.databricks.com/aws/en/ai-gateway/configure-ai-gateway-endpoints#configure-ai-gateway-using-the-ui) to track and audit Coding Agent usage for your organization, and track your Coding Agent request and response payload through the use of [AI Gateway Inference Table](https://docs.databricks.com/aws/en/ai-gateway/inference-tables)
 
 ## Supported Agents
 
-FMAPI supports all of the coding agents listed below. Setup scripts automate the configuration for each agent &mdash; scripts for OpenAI Codex and Gemini CLI are planned.
+FMAPI supports all of the coding agents listed below. The CLI automates the configuration for each agent &mdash; support for OpenAI Codex and Gemini CLI is planned.
 
-| Coding Agent | Setup Script | Status |
+| Coding Agent | CLI Command | Status |
 |---|---|---|
-| Claude Code | `setup-fmapi-claudecode.sh` | Implemented |
-| OpenAI Codex | — | Setup script planned |
-| Gemini CLI | — | Setup script planned |
+| Claude Code | `setup-fmapi-claudecode` | Implemented |
+| OpenAI Codex | — | Planned |
+| Gemini CLI | — | Planned |
 
 ## Claude Code
 
@@ -46,7 +46,7 @@ FMAPI_HOME=~/my-custom-path bash <(curl -sL https://raw.githubusercontent.com/an
 Then run setup:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh
+setup-fmapi-claudecode
 ```
 
 <details>
@@ -83,10 +83,11 @@ Clone the repo manually to any location:
 ```bash
 git clone https://github.com/anthonyivn2/fmapi-codingagent-setup.git
 cd fmapi-codingagent-setup
-bash setup-fmapi-claudecode.sh
+uv tool install . --force
+setup-fmapi-claudecode
 ```
 
-If you install from source, replace `~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh` in the examples below with the path to your clone.
+This installs the CLI globally. All commands below work the same regardless of install method.
 
 </details>
 
@@ -102,15 +103,15 @@ If the browser does not open automatically during OAuth login:
 
 WSL 2 with WSLg (GUI support) typically works without extra configuration.
 
-Run `--doctor` to verify your WSL environment:
+Run `doctor` to verify your WSL environment:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --doctor
+setup-fmapi-claudecode doctor
 ```
 
 </details>
 
-### What the Script Does
+### What Setup Does
 
 1. **Installs dependencies** &mdash; Claude Code, Databricks CLI, and jq. Skips anything already installed. Uses Homebrew on macOS, `apt-get`/`yum` and curl installers on Linux.
 
@@ -125,7 +126,7 @@ bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --doctor
 #### Status Dashboard
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --status
+setup-fmapi-claudecode status
 ```
 
 - **Configuration** &mdash; workspace URL, profile, and model names
@@ -135,7 +136,7 @@ bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --status
 #### Re-authentication
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --reauth
+setup-fmapi-claudecode reauth
 ```
 
 Triggers `databricks auth login` for your configured profile and verifies the new session is valid.
@@ -143,17 +144,19 @@ Triggers `databricks auth login` for your configured profile and verifies the ne
 #### Diagnostics
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --doctor
+setup-fmapi-claudecode doctor
 ```
 
-Runs six categories of checks, each reporting **PASS**, **FAIL**, **WARN**, or **SKIP** with actionable fix suggestions:
+Runs eight categories of checks, each reporting **PASS**, **FAIL**, **WARN**, or **SKIP** with actionable fix suggestions:
 
 - **Dependencies** &mdash; jq, databricks, claude, and curl are installed; reports versions
+- **Environment** &mdash; OS, WSL version, and headless state detection
 - **Configuration** &mdash; settings file is valid JSON, all required FMAPI keys present, helper script exists and is executable
 - **Profile** &mdash; Databricks CLI profile exists in `~/.databrickscfg`
 - **Auth** &mdash; OAuth token is valid
-- **Connectivity** &mdash; HTTP reachability to the Databricks serving endpoints API
+- **Connectivity** &mdash; HTTP reachability to the Databricks serving endpoints API. When AI Gateway v2 is configured, also tests gateway endpoint reachability
 - **Models** &mdash; all configured model names exist as endpoints and are READY
+- **Hooks** &mdash; SubagentStart and UserPromptSubmit pre-check hooks are configured and executable
 
 Exits with code 1 if any checks fail.
 
@@ -162,7 +165,7 @@ Exits with code 1 if any checks fail.
 List all serving endpoints in your workspace:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --list-models
+setup-fmapi-claudecode list-models
 ```
 
 Currently configured models are highlighted in green. Use this to discover available model IDs when running setup.
@@ -170,7 +173,7 @@ Currently configured models are highlighted in green. Use this to discover avail
 Validate that your configured models exist and are ready:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --validate-models
+setup-fmapi-claudecode validate-models
 ```
 
 Reports per-model status: **PASS** (exists and READY), **WARN** (exists but not READY), **FAIL** (not found), or **SKIP** (not configured). Exits with code 1 if any models fail validation.
@@ -203,13 +206,13 @@ Selecting **Yes, proceed** re-runs the full setup (dependencies, auth, settings,
 For a fully non-interactive re-run using your previously saved configuration:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --reinstall
+setup-fmapi-claudecode reinstall
 ```
 
 #### Uninstalling
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --uninstall
+setup-fmapi-claudecode uninstall
 ```
 
 The uninstall command removes all FMAPI artifacts in order:
@@ -252,7 +255,7 @@ rm -f ~/.claude/settings.json
 #### Updating
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --self-update
+setup-fmapi-claudecode self-update
 ```
 
 Fetches the latest changes from the remote repository and updates in place. Shows how many commits are new and reports the version change. Requires the installation to be a git clone (both the quick installer and manual clone work).
@@ -269,11 +272,11 @@ Or if already current:
   ok Already up to date at v1.1.0.
 ```
 
-When updating an existing install that already has FMAPI configured, the installer prints a `--reinstall` hint so you can quickly refresh your setup with the latest script version.
+When updating an existing install that already has FMAPI configured, the installer prints a `reinstall` hint so you can quickly refresh your setup with the latest version.
 
 ### Plugin Skills
 
-The setup script registers this repo as a Claude Code plugin, making these slash commands available:
+Setup registers this repo as a Claude Code plugin, making these slash commands available:
 
 | Skill | Description |
 |---|---|
@@ -291,8 +294,7 @@ The setup script registers this repo as a Claude Code plugin, making these slash
 Pass `--host` to enable non-interactive mode. All other flags auto-default if omitted:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh \
-  --host https://my-workspace.cloud.databricks.com
+setup-fmapi-claudecode --host https://my-workspace.cloud.databricks.com
 ```
 
 Override any default with additional flags &mdash; see [CLI Reference](#cli-reference) for the full list.
@@ -303,12 +305,10 @@ Route API calls through Databricks AI Gateway v2 instead of the default serving 
 
 ```bash
 # Auto-detect workspace ID
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh \
-  --host https://my-workspace.cloud.databricks.com --ai-gateway
+setup-fmapi-claudecode --host https://my-workspace.cloud.databricks.com --ai-gateway
 
 # Explicit workspace ID
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh \
-  --host https://my-workspace.cloud.databricks.com --ai-gateway --workspace-id 1234567890
+setup-fmapi-claudecode --host https://my-workspace.cloud.databricks.com --ai-gateway --workspace-id 1234567890
 ```
 
 In interactive mode, the script prompts you to choose between "Serving Endpoints (default)" and "AI Gateway v2 (beta)". When AI Gateway is selected, the workspace ID is auto-detected from the Databricks API. If auto-detection fails, you are prompted to enter it manually (or use `--workspace-id` in non-interactive mode).
@@ -323,13 +323,13 @@ Load configuration from a JSON file instead of passing individual flags. Useful 
 
 ```bash
 # From a local config file
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --config ./my-config.json
+setup-fmapi-claudecode --config ./my-config.json
 
 # From a remote URL (HTTPS only)
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --config-url https://example.com/fmapi-config.json
+setup-fmapi-claudecode --config-url https://example.com/fmapi-config.json
 
 # Config file with CLI overrides (CLI flags take priority)
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --config ./my-config.json --model databricks-claude-sonnet-4-6
+setup-fmapi-claudecode --config ./my-config.json --model databricks-claude-sonnet-4-6
 ```
 
 Both `--config` and `--config-url` enable non-interactive mode. See [`example-config.json`](example-config.json) for the full format and all supported keys.
@@ -339,20 +339,19 @@ Priority when combining sources: CLI flags > config file > existing `settings.js
 ### CLI Reference
 
 ```
-Usage: bash setup-fmapi-claudecode.sh [OPTIONS]
+Usage: setup-fmapi-claudecode [OPTIONS] [COMMAND]
 
 Commands:
-  --status              Show FMAPI configuration health dashboard
-  --reauth              Re-authenticate Databricks OAuth session
-  --doctor              Run comprehensive diagnostics (deps, config, auth, connectivity, models)
-  --list-models         List all serving endpoints in the workspace
-  --validate-models     Validate configured models exist and are ready
-  --reinstall           Rerun setup using previously saved configuration
-  --self-update         Update to the latest version
-  --uninstall           Remove FMAPI helper scripts and settings
-  -h, --help            Show this help message
+  status                Show FMAPI configuration health dashboard
+  reauth                Re-authenticate Databricks OAuth session
+  doctor                Run comprehensive diagnostics
+  list-models           List all serving endpoints in the workspace
+  validate-models       Validate configured models exist and are ready
+  reinstall             Rerun setup using previously saved configuration
+  self-update           Update to the latest version
+  uninstall             Remove FMAPI helper scripts and settings
 
-Setup options (skip interactive prompts):
+Setup options (used when no subcommand, skip interactive prompts):
   --host URL            Databricks workspace URL (required for non-interactive)
   --profile NAME        CLI profile name (default: fmapi-claudecode-profile)
   --model MODEL         Primary model (default: databricks-claude-opus-4-6)
@@ -368,11 +367,13 @@ Config file options:
   --config PATH         Load configuration from a local JSON file
   --config-url URL      Load configuration from a remote JSON URL (HTTPS only)
 
-Output options:
+Global options:
   --verbose             Show debug-level output
   --quiet, -q           Suppress informational output (errors always shown)
   --no-color            Disable colored output (also respects NO_COLOR env var)
   --dry-run             Show what would happen without making changes
+  --version             Show version
+  --help                Show help message
 ```
 
 ### How It Works
@@ -383,9 +384,9 @@ Claude Code invokes the helper script every 60 minutes by default (configurable 
 
 ### Troubleshooting
 
-> **Not sure what's wrong?** Run `--doctor` first &mdash; it checks dependencies, config files, auth, connectivity, and models in one pass:
+> **Not sure what's wrong?** Run `doctor` first &mdash; it checks dependencies, environment, config files, auth, connectivity, models, and hooks in one pass:
 > ```bash
-> bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --doctor
+> setup-fmapi-claudecode doctor
 > ```
 
 ---
@@ -412,12 +413,12 @@ This means the helper script that supplies OAuth tokens is failing. To diagnose:
    ```
 2. If it prints an error about an expired or invalid token, re-authenticate:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --reauth
+   setup-fmapi-claudecode reauth
    ```
    Or use `/fmapi-codingagent-reauth` inside Claude Code.
 3. If the helper script is missing or not executable, re-run setup to regenerate it:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --reinstall
+   setup-fmapi-claudecode reinstall
    ```
 
 ---
@@ -428,11 +429,11 @@ Your OAuth session has likely expired. OAuth sessions expire after a period of i
 
 1. Re-authenticate:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --reauth
+   setup-fmapi-claudecode reauth
    ```
 2. Verify the session is now valid:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --status
+   setup-fmapi-claudecode status
    ```
 3. Restart Claude Code:
    ```bash
@@ -447,11 +448,11 @@ The configured model name does not match any serving endpoint in your workspace.
 
 1. List available endpoints to find the correct name:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --list-models
+   setup-fmapi-claudecode list-models
    ```
 2. Re-run setup and select the correct model IDs:
    ```bash
-   bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh
+   setup-fmapi-claudecode
    ```
 
 ---
@@ -461,7 +462,7 @@ The configured model name does not match any serving endpoint in your workspace.
 This is usually a serving endpoint issue, not a setup issue. Check that your endpoints are in READY state:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --validate-models
+setup-fmapi-claudecode validate-models
 ```
 
 If any model shows **WARN** (exists but not READY), the endpoint may be provisioning or unhealthy. Check the endpoint status in your Databricks workspace UI.
@@ -484,7 +485,7 @@ Then re-run setup.
 If none of the above help, run a full diagnostic and review the output:
 
 ```bash
-bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --doctor --verbose
+setup-fmapi-claudecode doctor --verbose
 ```
 
 The `--verbose` flag adds debug-level detail to every check. Look for any **FAIL** lines &mdash; each includes a suggested fix.

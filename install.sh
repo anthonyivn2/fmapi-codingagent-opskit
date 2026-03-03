@@ -116,14 +116,9 @@ else
 fi
 
 # ── Verify ───────────────────────────────────────────────────────────────────
-# Verify at least one setup script exists
-setup_scripts=()
-for script in "${INSTALL_DIR}"/setup-fmapi-*.sh; do
-  [[ -f "$script" ]] && setup_scripts+=("$script")
-done
-
-if [[ ${#setup_scripts[@]} -eq 0 ]]; then
-  error "Installation verification failed: no setup-fmapi-*.sh scripts found."
+# Verify the Python package exists
+if [[ ! -f "${INSTALL_DIR}/pyproject.toml" ]]; then
+  error "Installation verification failed: pyproject.toml not found in ${INSTALL_DIR}."
   exit 1
 fi
 
@@ -132,26 +127,51 @@ if [[ -f "${INSTALL_DIR}/VERSION" ]]; then
   local_version=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
 fi
 
+# ── Install uv if not available ──────────────────────────────────────────────
+if command -v uv &>/dev/null; then
+  success "uv already installed."
+else
+  info "Installing uv (Python package manager) ..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  # Ensure uv is on PATH for this session
+  export PATH="$HOME/.local/bin:$PATH"
+  if command -v uv &>/dev/null; then
+    success "uv installed."
+  else
+    error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
+    exit 1
+  fi
+fi
+
+# ── Install CLI as global tool ───────────────────────────────────────────────
+info "Installing setup-fmapi-claudecode CLI ..."
+# Ensure uv tool bin is on PATH for this session
+UV_TOOL_BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+export PATH="${UV_TOOL_BIN_DIR}:$PATH"
+
+uv tool install "$INSTALL_DIR" --force --quiet 2>/dev/null || \
+  uv tool install "$INSTALL_DIR" --force
+success "CLI installed globally as setup-fmapi-claudecode."
+
+# Check if the tool bin directory is on the user's default PATH
+if ! echo "$PATH" | tr ':' '\n' | grep -qx "$UV_TOOL_BIN_DIR" 2>/dev/null || \
+   ! command -v setup-fmapi-claudecode &>/dev/null; then
+  echo ""
+  echo -e "  ${RED}${BOLD}NOTE:${RESET} ${UV_TOOL_BIN_DIR} may not be on your PATH."
+  echo -e "  Add it to your shell profile to use the CLI in new terminals:"
+  echo ""
+  echo -e "    ${CYAN}echo 'export PATH=\"${UV_TOOL_BIN_DIR}:\$PATH\"' >> ~/.zshrc${RESET}"
+  echo -e "    ${DIM}(or ~/.bashrc for bash)${RESET}"
+  echo ""
+fi
+
 # ── Auto-run agent setup if --agent was provided ─────────────────────────────
 if [[ -n "$AGENT" ]]; then
   # Normalize: claude-code → claudecode
   agent_normalized="${AGENT//-/}"
-  setup_script="${INSTALL_DIR}/setup-fmapi-${agent_normalized}.sh"
-
-  if [[ ! -f "$setup_script" ]]; then
-    error "No setup script for agent '${AGENT}' (expected: setup-fmapi-${agent_normalized}.sh)."
-    echo -e "  Available agents:" >&2
-    for s in "${setup_scripts[@]}"; do
-      suffix="${s##*/setup-fmapi-}"
-      suffix="${suffix%.sh}"
-      echo -e "    --agent ${suffix}  ($(_agent_display_name "$suffix"))" >&2
-    done
-    echo "" >&2
-    exit 1
-  fi
 
   info "Running setup for $(_agent_display_name "$agent_normalized")..."
-  exec bash "$setup_script" ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}
+  exec setup-fmapi-claudecode ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}
 fi
 
 # ── Print next steps ─────────────────────────────────────────────────────────
@@ -159,31 +179,23 @@ echo ""
 success "fmapi-codingagent-setup v${local_version} installed to ${INSTALL_DIR}"
 echo ""
 echo -e "  ${BOLD}Next steps:${RESET}"
-
-for s in "${setup_scripts[@]}"; do
-  suffix="${s##*/setup-fmapi-}"
-  suffix="${suffix%.sh}"
-  display_name="$(_agent_display_name "$suffix")"
-  echo ""
-  echo -e "  Run setup for ${display_name}:"
-  echo -e "    ${CYAN}bash ${s}${RESET}"
-done
+echo ""
+echo -e "  Run setup for Claude Code:"
+echo -e "    ${CYAN}setup-fmapi-claudecode${RESET}"
 
 echo ""
 echo -e "  Run non-interactive setup (example):"
-echo -e "    ${CYAN}bash ${setup_scripts[0]} --host https://your-workspace.cloud.databricks.com${RESET}"
+echo -e "    ${CYAN}setup-fmapi-claudecode --host https://your-workspace.cloud.databricks.com${RESET}"
 
 echo ""
 echo -e "  Update to the latest version:"
-echo -e "    ${CYAN}bash ${setup_scripts[0]} --self-update${RESET}"
+echo -e "    ${CYAN}setup-fmapi-claudecode self-update${RESET}"
 
 # ── Reinstall hint (update + existing config) ─────────────────────────────────
 if [[ "$IS_UPDATE" == true ]] && _has_fmapi_config; then
   echo ""
   echo -e "  ${BOLD}Already configured?${RESET} Update your setup with:"
-  for s in "${setup_scripts[@]}"; do
-    echo -e "    ${CYAN}bash ${s} --reinstall${RESET}"
-  done
+  echo -e "    ${CYAN}setup-fmapi-claudecode reinstall${RESET}"
 fi
 
 echo ""

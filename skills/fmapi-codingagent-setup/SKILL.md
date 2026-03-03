@@ -10,16 +10,14 @@ Configure Claude Code to use Databricks Foundation Model API (FMAPI).
 
 ## Instructions
 
-1. Determine the install path of this plugin. This SKILL.md file is located at `<install-path>/skills/fmapi-codingagent-setup/SKILL.md`, so the setup script is two directories up at `<install-path>/setup-fmapi-claudecode.sh`.
-
-2. Ask the user how they want to run setup:
+1. Ask the user how they want to run setup:
 
 ### Interactive mode (default)
 
-Run with no arguments. The script will prompt for all required values, pre-populating defaults from any existing configuration:
+Run with no arguments. The CLI will prompt for all required values, pre-populating defaults from any existing configuration:
 
 ```bash
-bash "<install-path>/setup-fmapi-claudecode.sh"
+setup-fmapi-claudecode
 ```
 
 ### Non-interactive mode
@@ -27,7 +25,7 @@ bash "<install-path>/setup-fmapi-claudecode.sh"
 Pass `--host` to enable non-interactive mode. All other flags auto-default if omitted:
 
 ```bash
-bash "<install-path>/setup-fmapi-claudecode.sh" \
+setup-fmapi-claudecode \
   --host "https://my-workspace.cloud.databricks.com"
 ```
 
@@ -52,14 +50,14 @@ bash "<install-path>/setup-fmapi-claudecode.sh" \
 | `--no-color` | Disable colored output | `--no-color` |
 | `--dry-run` | Show what would happen without making changes | `--dry-run --host https://...` |
 
-When `--host`, `--config`, or `--config-url` is provided, the script runs non-interactively. Other flags auto-default if omitted (profile defaults to `fmapi-claudecode-profile`). CLI flags override config file values. `--config` and `--config-url` are mutually exclusive. `--dry-run` implies non-interactive mode.
+When `--host`, `--config`, or `--config-url` is provided, the CLI runs non-interactively. Other flags auto-default if omitted (profile defaults to `fmapi-claudecode-profile`). CLI flags override config file values. `--config` and `--config-url` are mutually exclusive. `--dry-run` implies non-interactive mode.
 
 ## Other Commands
 
-| Flag | Description |
+| Command | Description |
 |---|---|
-| `--status` | Check FMAPI configuration health (use `/fmapi-codingagent-status` instead) |
-| `--reauth` | Re-authenticate OAuth session (use `/fmapi-codingagent-reauth` instead) |
-| `--self-update` | Update to the latest version |
-| `--uninstall` | Remove all FMAPI artifacts |
-| `-h`, `--help` | Show help message |
+| `setup-fmapi-claudecode status` | Check FMAPI configuration health (use `/fmapi-codingagent-status` instead) |
+| `setup-fmapi-claudecode reauth` | Re-authenticate OAuth session (use `/fmapi-codingagent-reauth` instead) |
+| `setup-fmapi-claudecode self-update` | Update to the latest version |
+| `setup-fmapi-claudecode uninstall` | Remove all FMAPI artifacts |
+| `setup-fmapi-claudecode --help` | Show help message |

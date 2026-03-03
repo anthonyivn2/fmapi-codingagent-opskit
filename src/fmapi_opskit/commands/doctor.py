@@ -1,0 +1,405 @@
+"""Doctor command — comprehensive diagnostics with 8 sub-checks."""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+from fmapi_opskit.agents.base import AgentAdapter
+from fmapi_opskit.auth.databricks import has_databricks_cli
+from fmapi_opskit.auth.oauth import check_oauth_status, get_oauth_token
+from fmapi_opskit.config.discovery import discover_config
+from fmapi_opskit.config.models import FmapiConfig
+from fmapi_opskit.core.deps import get_cmd_version, install_hint
+from fmapi_opskit.core.platform import PlatformInfo
+from fmapi_opskit.core.version import get_version
+from fmapi_opskit.network.connectivity import check_http_reachable
+from fmapi_opskit.network.endpoints import fetch_endpoints, validate_model
+from fmapi_opskit.settings.hooks import get_fmapi_hook_command
+from fmapi_opskit.ui.console import get_console
+from fmapi_opskit.ui.tables import display_model_validation
+
+
+def do_doctor(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
+    """Run comprehensive FMAPI diagnostics."""
+    console = get_console()
+    console.print("\n[bold]  FMAPI Doctor[/bold]\n")
+
+    cfg = discover_config(adapter)
+    any_fail = False
+
+    if not _doctor_dependencies(adapter, platform_info):
+        any_fail = True
+    _doctor_environment(platform_info)
+    if not _doctor_configuration(adapter, cfg):
+        any_fail = True
+    if not _doctor_profile(cfg):
+        any_fail = True
+    if not _doctor_auth(cfg, platform_info):
+        any_fail = True
+    if not _doctor_connectivity(cfg):
+        any_fail = True
+    if not _doctor_models(adapter, cfg):
+        any_fail = True
+    if not _doctor_hooks(cfg):
+        any_fail = True
+
+    if any_fail:
+        console.print("  [error]Some checks failed.[/error] Review the issues above.\n")
+        sys.exit(1)
+    else:
+        console.print("  [success]All checks passed![/success]\n")
+        sys.exit(0)
+
+
+def _doctor_dependencies(adapter: AgentAdapter, pinfo: PlatformInfo) -> bool:
+    console = get_console()
+    console.print("  [bold]Dependencies[/bold]")
+    ok = True
+
+    for dep_name in ("jq", "databricks", adapter.config.cli_cmd, "curl"):
+        if shutil.which(dep_name):
+            ver = get_cmd_version(dep_name)
+            console.print(f"  [success]PASS[/success]  {dep_name}  [dim]{ver}[/dim]")
+        else:
+            hint = install_hint(dep_name, pinfo, adapter.config)
+            console.print(f"  [error]FAIL[/error]  {dep_name}  [dim]Fix: {hint}[/dim]")
+            ok = False
+
+    console.print(f"  [dim]fmapi-codingagent-setup[/dim]  {get_version()}")
+    console.print()
+    return ok
+
+
+def _doctor_environment(pinfo: PlatformInfo) -> None:
+    console = get_console()
+    console.print("  [bold]Environment[/bold]")
+    console.print(f"  [dim]INFO[/dim]  OS: {pinfo.os_type}")
+
+    if pinfo.is_wsl:
+        console.print(
+            f"  [dim]INFO[/dim]  WSL version: {pinfo.wsl_version or 'unknown'}  "
+            "[yellow](experimental)[/yellow]"
+        )
+        if pinfo.wsl_distro:
+            console.print(f"  [dim]INFO[/dim]  WSL distro: {pinfo.wsl_distro}")
+
+        if shutil.which("wslview"):
+            console.print("  [success]PASS[/success]  wslview available (wslu installed)")
+        elif shutil.which("xdg-open"):
+            console.print("  [success]PASS[/success]  xdg-open available")
+        elif os.environ.get("BROWSER"):
+            console.print(
+                f"  [success]PASS[/success]  BROWSER env var set: {os.environ['BROWSER']}"
+            )
+        else:
+            console.print(
+                "  [warning]WARN[/warning]  No browser opener found  "
+                "[dim]Fix: sudo apt-get install -y wslu[/dim]"
+            )
+
+    console.print()
+
+
+def _doctor_configuration(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
+    console = get_console()
+    console.print("  [bold]Configuration[/bold]")
+    ok = True
+
+    if not shutil.which("jq"):
+        console.print("  [warning]SKIP[/warning]  Cannot check configuration (jq not installed)")
+        console.print()
+        return True
+
+    if not cfg.found:
+        console.print(
+            "  [error]FAIL[/error]  No FMAPI configuration found  [dim]Fix: run setup first[/dim]"
+        )
+        console.print()
+        return False
+
+    # Settings file valid JSON
+    settings_path = Path(cfg.settings_file)
+    if settings_path.is_file():
+        try:
+            json.loads(settings_path.read_text())
+            console.print(
+                f"  [success]PASS[/success]  Settings file is valid JSON  "
+                f"[dim]{cfg.settings_file}[/dim]"
+            )
+        except (json.JSONDecodeError, OSError):
+            console.print(
+                f"  [error]FAIL[/error]  Settings file is invalid JSON  "
+                f"[dim]{cfg.settings_file}[/dim]"
+            )
+            ok = False
+    else:
+        console.print(
+            f"  [error]FAIL[/error]  Settings file not found  [dim]{cfg.settings_file}[/dim]"
+        )
+        ok = False
+
+    # Required env keys
+    if cfg.settings_file and Path(cfg.settings_file).is_file():
+        try:
+            settings = json.loads(Path(cfg.settings_file).read_text())
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+        env = settings.get("env", {})
+        missing = [k for k in adapter.config.required_env_keys if not env.get(k)]
+        if not missing:
+            console.print("  [success]PASS[/success]  All required FMAPI env keys present")
+        else:
+            console.print(
+                f"  [error]FAIL[/error]  Missing env keys: {' '.join(missing)}  "
+                "[dim]Fix: re-run setup[/dim]"
+            )
+            ok = False
+
+    # Routing mode
+    if cfg.ai_gateway == "true":
+        console.print(
+            f"  [dim]INFO[/dim]  Routing: AI Gateway v2 (beta), "
+            f"workspace ID: {cfg.workspace_id or 'unknown'}"
+        )
+    else:
+        console.print("  [dim]INFO[/dim]  Routing: Serving Endpoints (v1)")
+
+    # Agent-specific checks
+    if not adapter.doctor_extra():
+        ok = False
+
+    # Helper script
+    if cfg.helper_file and Path(cfg.helper_file).is_file():
+        if os.access(cfg.helper_file, os.X_OK):
+            console.print(
+                f"  [success]PASS[/success]  Helper script exists and is executable  "
+                f"[dim]{cfg.helper_file}[/dim]"
+            )
+        else:
+            console.print(
+                f"  [error]FAIL[/error]  Helper script not executable  "
+                f"[dim]Fix: chmod 700 {cfg.helper_file}[/dim]"
+            )
+            ok = False
+    elif cfg.helper_file:
+        console.print(
+            f"  [error]FAIL[/error]  Helper script not found  [dim]{cfg.helper_file}[/dim]"
+        )
+        ok = False
+
+    console.print()
+    return ok
+
+
+def _doctor_profile(cfg: FmapiConfig) -> bool:
+    console = get_console()
+    console.print("  [bold]Profile[/bold]")
+
+    if not cfg.profile:
+        console.print("  [warning]SKIP[/warning]  No profile configured")
+        console.print()
+        return True
+
+    dbcfg = Path.home() / ".databrickscfg"
+    if dbcfg.is_file():
+        try:
+            content = dbcfg.read_text()
+            if f"[{cfg.profile}]" in content:
+                console.print(
+                    f"  [success]PASS[/success]  Profile '{cfg.profile}' exists in ~/.databrickscfg"
+                )
+                console.print()
+                return True
+        except OSError:
+            pass
+
+    console.print(
+        f"  [error]FAIL[/error]  Profile '{cfg.profile}' not found in ~/.databrickscfg  "
+        "[dim]Fix: --reauth or re-run setup[/dim]"
+    )
+    console.print()
+    return False
+
+
+def _doctor_auth(cfg: FmapiConfig, pinfo: PlatformInfo) -> bool:
+    console = get_console()
+    console.print("  [bold]Auth[/bold]")
+
+    if not cfg.profile:
+        console.print("  [warning]SKIP[/warning]  No profile configured")
+        console.print()
+        return True
+
+    if not has_databricks_cli():
+        console.print("  [warning]SKIP[/warning]  databricks CLI not installed")
+        console.print()
+        return True
+
+    ok = True
+    if check_oauth_status(cfg.profile):
+        console.print("  [success]PASS[/success]  OAuth token is valid")
+    else:
+        console.print(
+            "  [error]FAIL[/error]  OAuth token expired or invalid  [dim]Fix: reauth[/dim]"
+        )
+        ok = False
+
+    if pinfo.is_headless:
+        console.print(
+            "  [warning]INFO[/warning]  Headless SSH session detected -- "
+            "browser-based OAuth will not work here"
+        )
+
+    console.print()
+    return ok
+
+
+def _doctor_connectivity(cfg: FmapiConfig) -> bool:
+    console = get_console()
+    console.print("  [bold]Connectivity[/bold]")
+
+    if not cfg.host:
+        console.print("  [warning]SKIP[/warning]  No host configured")
+        console.print()
+        return True
+
+    token = get_oauth_token(cfg.profile) if cfg.profile else ""
+    if not token:
+        console.print("  [warning]SKIP[/warning]  Cannot test connectivity (no valid token)")
+        console.print()
+        return True
+
+    ok = True
+    url = f"{cfg.host}/api/2.0/serving-endpoints"
+    code = check_http_reachable(url, token)
+
+    if code == 200:
+        console.print(f"  [success]PASS[/success]  Databricks API reachable  [dim]{cfg.host}[/dim]")
+    elif code > 0:
+        console.print(
+            f"  [warning]WARN[/warning]  Databricks API returned HTTP {code}  [dim]{cfg.host}[/dim]"
+        )
+        ok = False
+    else:
+        console.print(
+            f"  [error]FAIL[/error]  Cannot reach Databricks API  "
+            f"[dim]Fix: check network and {cfg.host}[/dim]"
+        )
+        ok = False
+
+    # Gateway connectivity
+    if cfg.ai_gateway == "true" and cfg.workspace_id:
+        gw_url = f"https://{cfg.workspace_id}.ai-gateway.cloud.databricks.com/anthropic/v1/messages"
+        gw_code = check_http_reachable(gw_url, token)
+        if gw_code > 0:
+            console.print(
+                f"  [success]PASS[/success]  AI Gateway v2 reachable  [dim](HTTP {gw_code})[/dim]"
+            )
+        else:
+            console.print(
+                "  [error]FAIL[/error]  Cannot reach AI Gateway v2  "
+                "[dim]Fix: check workspace ID and network[/dim]"
+            )
+            ok = False
+
+    console.print()
+    return ok
+
+
+def _doctor_models(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
+    console = get_console()
+    console.print("  [bold]Models[/bold]")
+
+    if not cfg.found:
+        console.print("  [warning]SKIP[/warning]  No configuration found")
+        console.print()
+        return True
+
+    if not cfg.profile or not has_databricks_cli():
+        console.print("  [warning]SKIP[/warning]  Cannot validate models (missing profile or CLI)")
+        console.print()
+        return True
+
+    if not check_oauth_status(cfg.profile):
+        console.print("  [warning]SKIP[/warning]  Cannot validate models (auth failed)")
+        console.print()
+        return True
+
+    endpoints = fetch_endpoints(cfg.profile)
+
+    models_to_check: list[tuple[str, str]] = []
+    if cfg.model:
+        models_to_check.append(("Model", cfg.model))
+    if cfg.opus:
+        models_to_check.append(("Opus", cfg.opus))
+    if cfg.sonnet:
+        models_to_check.append(("Sonnet", cfg.sonnet))
+    if cfg.haiku:
+        models_to_check.append(("Haiku", cfg.haiku))
+
+    if not models_to_check:
+        console.print("  [dim]SKIP[/dim]  No models configured")
+        console.print()
+        return True
+
+    results: list[tuple[str, str, str, str]] = []
+    for label, model_name in models_to_check:
+        if endpoints is None:
+            results.append((label, model_name, "WARN", "could not fetch endpoints"))
+        else:
+            status, detail = validate_model(endpoints, model_name)
+            results.append((label, model_name, status, detail))
+
+    ok = display_model_validation(results)
+    console.print()
+    return ok
+
+
+def _doctor_hooks(cfg: FmapiConfig) -> bool:
+    console = get_console()
+    console.print("  [bold]Hooks[/bold]")
+
+    if not cfg.found:
+        console.print("  [warning]SKIP[/warning]  No configuration found")
+        console.print()
+        return True
+
+    settings: dict = {}
+    if cfg.settings_file:
+        with contextlib.suppress(json.JSONDecodeError, OSError):
+            settings = json.loads(Path(cfg.settings_file).read_text())
+
+    ok = True
+    for hook_type in ("SubagentStart", "UserPromptSubmit"):
+        hook_cmd = get_fmapi_hook_command(settings, hook_type)
+
+        if not hook_cmd:
+            console.print(
+                f"  [warning]WARN[/warning]  {hook_type} hook not configured  "
+                "[dim]Fix: re-run setup[/dim]"
+            )
+            ok = False
+        elif not Path(hook_cmd).is_file():
+            console.print(
+                f"  [error]FAIL[/error]  {hook_type} hook script not found: {hook_cmd}  "
+                "[dim]Fix: re-run setup[/dim]"
+            )
+            ok = False
+        elif not os.access(hook_cmd, os.X_OK):
+            console.print(
+                f"  [error]FAIL[/error]  {hook_type} hook script not executable  "
+                f"[dim]Fix: chmod 700 {hook_cmd}[/dim]"
+            )
+            ok = False
+        else:
+            console.print(
+                f"  [success]PASS[/success]  {hook_type} pre-check hook  [dim]{hook_cmd}[/dim]"
+            )
+
+    console.print()
+    return ok
