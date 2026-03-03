@@ -174,3 +174,7 @@ def do_uninstall(adapter: AgentAdapter) -> None:
         log.success(f"Removed install directory {default_install_dir}.")
 
     console.print("\n[success]  Uninstall complete![/success]\n")
+    log.info(
+        "To fully remove the CLI tool, run: "
+        "[info]uv tool uninstall fmapi-codingagent-opskit[/info]"
+    )

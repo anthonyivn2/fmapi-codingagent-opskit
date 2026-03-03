@@ -314,4 +314,10 @@ def _print_summary(
     console.print(f"  [dim]Helper[/dim]     [bold]{helper_file}[/bold]")
     console.print(f"  [dim]Hook[/dim]       [bold]{hook_file}[/bold]")
     console.print(f"  [dim]Settings[/dim]   [bold]{settings_file}[/bold]")
-    console.print(f"\n  Run [info][bold]{c.cli_cmd}[/bold][/info] to start.\n")
+    console.print(f"\n  Run [info][bold]{c.cli_cmd}[/bold][/info] to start.")
+    console.print(
+        f"\n  [dim]Installation files: {settings_file}, {helper_file}, {hook_file}[/dim]"
+    )
+    console.print(
+        f"  [dim]To uninstall: [bold]{c.cli_cmd} uninstall[/bold][/dim]\n"
+    )

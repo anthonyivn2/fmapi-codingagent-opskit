@@ -216,4 +216,13 @@ if [[ "$IS_UPDATE" == true ]] && _has_fmapi_config; then
   echo -e "    ${CYAN}setup-fmapi-claudecode reinstall${RESET}"
 fi
 
+# ── Installation files hint ───────────────────────────────────────────────────
+echo ""
+echo -e "  ${DIM}Installation files:${RESET}"
+echo -e "    ${DIM}Repository clone  ${INSTALL_DIR}${RESET}"
+echo -e "    ${DIM}CLI tool          ${UV_TOOL_BIN_DIR}/setup-fmapi-claudecode${RESET}"
+echo ""
+echo -e "  ${DIM}To uninstall everything later:${RESET}"
+echo -e "    ${DIM}setup-fmapi-claudecode uninstall${RESET}"
+
 echo ""
