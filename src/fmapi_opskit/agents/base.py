@@ -15,6 +15,7 @@ class AgentConfig:
     name: str
     id: str
     cli_cmd: str
+    setup_cmd: str
     cli_install_cmd: str
 
     # Settings paths

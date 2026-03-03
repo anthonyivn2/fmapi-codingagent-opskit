@@ -16,6 +16,7 @@ CLAUDE_CODE_CONFIG = AgentConfig(
     name="Claude Code",
     id="claudecode",
     cli_cmd="claude",
+    setup_cmd="setup-fmapi-claudecode",
     cli_install_cmd="curl -fsSL https://claude.ai/install.sh | bash",
     # Settings paths
     settings_dir=".claude",
