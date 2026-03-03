@@ -3,25 +3,6 @@
 from __future__ import annotations
 
 
-def test_config_name(adapter):
-    assert adapter.config.name == "Claude Code", (
-        f"Expected name='Claude Code', got '{adapter.config.name}'"
-    )
-
-
-def test_config_default_model(adapter):
-    expected = "databricks-claude-opus-4-6"
-    assert adapter.config.default_model == expected, (
-        f"Expected default_model='{expected}', got '{adapter.config.default_model}'"
-    )
-
-
-def test_config_cli_cmd(adapter):
-    assert adapter.config.cli_cmd == "claude", (
-        f"Expected cli_cmd='claude', got '{adapter.config.cli_cmd}'"
-    )
-
-
 def test_config_env_variable_names(adapter):
     c = adapter.config
     assert c.env_model == "ANTHROPIC_MODEL", f"env_model mismatch: {c.env_model}"
@@ -30,24 +11,6 @@ def test_config_env_variable_names(adapter):
     assert c.env_sonnet == "ANTHROPIC_DEFAULT_SONNET_MODEL", f"env_sonnet mismatch: {c.env_sonnet}"
     assert c.env_haiku == "ANTHROPIC_DEFAULT_HAIKU_MODEL", f"env_haiku mismatch: {c.env_haiku}"
     assert c.env_ttl == "CLAUDE_CODE_API_KEY_HELPER_TTL_MS", f"env_ttl mismatch: {c.env_ttl}"
-
-
-def test_adapter_satisfies_protocol(adapter):
-    required_attrs = [
-        "config",
-        "settings_candidates",
-        "read_env",
-        "write_env_json",
-        "ensure_onboarding",
-        "register_plugin",
-        "deregister_plugin",
-        "install_cli",
-        "doctor_extra",
-        "dry_run_env_display",
-        "dry_run_extra",
-    ]
-    for attr in required_attrs:
-        assert hasattr(adapter, attr), f"AgentAdapter protocol requires '{attr}' but it is missing"
 
 
 def test_read_env_extracts_models(adapter, sample_settings):

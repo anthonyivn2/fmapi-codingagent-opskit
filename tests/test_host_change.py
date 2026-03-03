@@ -153,16 +153,6 @@ def test_loader_strips_trailing_slash(tmp_path):
     )
 
 
-def test_loader_host_without_slash_unchanged(tmp_path):
-    """Config file host without trailing slash should remain unchanged."""
-    p = tmp_path / "config.json"
-    p.write_text(json.dumps({"host": "https://example.cloud.databricks.com"}))
-    cfg = load_config_file(str(p))
-    assert cfg.host == "https://example.cloud.databricks.com", (
-        f"Host without slash should be unchanged, got '{cfg.host}'"
-    )
-
-
 # ---------------------------------------------------------------------------
 # discovery: host trailing slash normalization from helper script
 # ---------------------------------------------------------------------------

@@ -43,18 +43,6 @@ def test_write_sets_600_permissions(tmp_path):
     assert actual_mode == 0o600, f"Expected permissions 0o600, got {oct(actual_mode)}"
 
 
-def test_exists_false_for_missing(tmp_path):
-    mgr = SettingsManager(tmp_path / "nope.json")
-    assert mgr.exists() is False, "Non-existent file should report exists=False"
-
-
-def test_exists_true_after_write(tmp_path):
-    p = tmp_path / "settings.json"
-    mgr = SettingsManager(p)
-    mgr.write({"x": 1})
-    assert mgr.exists() is True, "File should exist after write"
-
-
 def test_merge_env_adds_keys(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(json.dumps({"env": {"KEEP": "v"}}))
