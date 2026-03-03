@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
 import platform
 import shutil
@@ -13,19 +14,72 @@ from pathlib import Path
 from fmapi_opskit.agents.base import AgentConfig
 
 # ---------------------------------------------------------------------------
+# Clone directory resolution
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CLONE_DIR = Path.home() / ".fmapi-codingagent-setup"
+
+
+def _is_clone_dir(path: Path) -> bool:
+    """Return True if *path* looks like the project clone (has .git/ and VERSION)."""
+    return (path / ".git").is_dir() and (path / "VERSION").is_file()
+
+
+def find_clone_dir() -> Path | None:
+    """Locate the git clone directory using a 3-tier strategy.
+
+    1. ``FMAPI_HOME`` env var (set by ``install.sh``).
+    2. Walk up from ``__file__`` looking for ``.git/`` + ``VERSION``.
+    3. Default ``~/.fmapi-codingagent-setup``.
+
+    Returns ``None`` if none of the above resolve to a valid clone.
+    """
+    # Tier 1: explicit env var
+    env_home = os.environ.get("FMAPI_HOME")
+    if env_home:
+        candidate = Path(env_home).expanduser().resolve()
+        if _is_clone_dir(candidate):
+            return candidate
+
+    # Tier 2: walk up from this source file
+    current = Path(__file__).resolve().parent
+    for _ in range(5):  # at most 5 levels up
+        if _is_clone_dir(current):
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+
+    # Tier 3: default install location
+    if _is_clone_dir(_DEFAULT_CLONE_DIR):
+        return _DEFAULT_CLONE_DIR
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
 
-# VERSION file is at repo root (3 levels up from this file)
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 def get_version() -> str:
-    """Read version from the VERSION file at the repository root."""
-    version_file = _REPO_ROOT / "VERSION"
-    if version_file.is_file():
-        return version_file.read_text().strip()
-    return "dev"
+    """Return the current package version.
+
+    Tries the clone directory's ``VERSION`` file first, then falls back to
+    ``importlib.metadata`` (reads from wheel / pyproject.toml metadata).
+    """
+    clone_dir = find_clone_dir()
+    if clone_dir is not None:
+        version_file = clone_dir / "VERSION"
+        if version_file.is_file():
+            text = version_file.read_text().strip()
+            if text:
+                return text
+
+    try:
+        return importlib.metadata.version("fmapi-codingagent-opskit")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
 
 
 # ---------------------------------------------------------------------------

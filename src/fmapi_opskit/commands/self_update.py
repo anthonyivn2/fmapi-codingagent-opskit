@@ -29,7 +29,11 @@ def do_self_update(script_dir: Path) -> None:
     # Check git repo
     if not (script_dir / ".git").is_dir():
         log.error(f"Not a git installation (no .git/ directory in {script_dir}).")
-        log.info("Re-install with:")
+        log.info(
+            "If you installed to a custom location, set the [bold]FMAPI_HOME[/bold] "
+            "environment variable to point to your clone directory."
+        )
+        log.info("Or re-install with:")
         log.info(
             "  [info]bash <(curl -sL "
             "https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/"

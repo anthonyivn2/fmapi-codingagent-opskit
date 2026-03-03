@@ -15,7 +15,7 @@ from fmapi_opskit.config.loader import (
     load_config_file,
     load_config_url,
 )
-from fmapi_opskit.core import detect_platform, get_version
+from fmapi_opskit.core import detect_platform, find_clone_dir, get_version
 from fmapi_opskit.ui.console import init_console
 
 app = typer.Typer(
@@ -40,7 +40,7 @@ def _get_platform():
 
 def _get_script_dir() -> Path:
     """Get the repo root (for templates, plugins, etc.)."""
-    return Path(__file__).resolve().parent.parent.parent
+    return find_clone_dir() or Path.home() / ".fmapi-codingagent-setup"
 
 
 def _version_callback(value: bool) -> None:
