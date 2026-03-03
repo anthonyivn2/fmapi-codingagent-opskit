@@ -118,8 +118,11 @@ def gather_config_pre_auth(
                 "        Account admins must enable it from the account console Previews page."
             )
 
+    # Only carry over discovered workspace_id if the host hasn't changed,
+    # otherwise force re-detection for the new workspace.
+    cfg_workspace_id = cfg.workspace_id if result.host == cfg.host.rstrip("/") else ""
     result.pending_workspace_id = _first_non_empty(
-        cli_workspace_id, file_cfg.workspace_id, cfg.workspace_id
+        cli_workspace_id, file_cfg.workspace_id, cfg_workspace_id
     )
 
     # CLI profile

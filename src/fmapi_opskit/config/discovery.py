@@ -59,7 +59,7 @@ def discover_config(adapter: AgentAdapter) -> FmapiConfig:
             if not m:
                 m = re.search(r'^HOST="(.*?)"', helper_text, re.MULTILINE)
             if m:
-                cfg.host = m.group(1)
+                cfg.host = m.group(1).rstrip("/")
 
         # Parse model names and TTL from settings.json env block
         env_vals = adapter.read_env(settings)

@@ -73,7 +73,7 @@ def _validate_and_parse(data: dict) -> FileConfig:
     if host:
         if not host.startswith("https://"):
             raise ConfigError(f"Config file: host must start with https://. Got: {host}")
-        cfg.host = host
+        cfg.host = host.rstrip("/")
 
     # profile
     profile = data.get("profile", "")
