@@ -1,4 +1,4 @@
-"""Doctor command — comprehensive diagnostics with 8 sub-checks."""
+"""Doctor command — comprehensive diagnostics with 10 sub-checks."""
 
 from __future__ import annotations
 
@@ -14,7 +14,13 @@ from fmapi_opskit.auth.databricks import has_databricks_cli
 from fmapi_opskit.auth.oauth import check_oauth_status, get_oauth_token
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.config.models import FmapiConfig
-from fmapi_opskit.core.deps import get_cmd_version, install_hint
+from fmapi_opskit.core.deps import (
+    check_xcode_clt_installed,
+    detect_python_version,
+    get_cmd_version,
+    get_xcode_clt_path,
+    install_hint,
+)
 from fmapi_opskit.core.platform import PlatformInfo
 from fmapi_opskit.core.version import get_version
 from fmapi_opskit.network.connectivity import check_http_reachable
@@ -34,6 +40,8 @@ def do_doctor(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
 
     if not _doctor_dependencies(adapter, platform_info):
         any_fail = True
+    _doctor_xcode_clt(platform_info)
+    _doctor_python(platform_info)
     _doctor_environment(platform_info)
     if not _doctor_configuration(adapter, cfg):
         any_fail = True
@@ -73,6 +81,47 @@ def _doctor_dependencies(adapter: AgentAdapter, pinfo: PlatformInfo) -> bool:
     console.print(f"  [dim]fmapi-codingagent-setup[/dim]  {get_version()}")
     console.print()
     return ok
+
+
+def _doctor_xcode_clt(pinfo: PlatformInfo) -> bool:
+    """Check Xcode Command Line Tools (macOS only, non-blocking)."""
+    console = get_console()
+    console.print("  [bold]Xcode CLT[/bold]")
+
+    if pinfo.os_type != "Darwin":
+        console.print("  [dim]SKIP[/dim]  Not macOS")
+        console.print()
+        return True
+
+    if check_xcode_clt_installed():
+        path = get_xcode_clt_path()
+        console.print(f"  [success]PASS[/success]  Xcode CLT installed  [dim]{path}[/dim]")
+    else:
+        console.print(
+            "  [warning]WARN[/warning]  Xcode CLT not installed  "
+            "[dim]Fix: xcode-select --install[/dim]"
+        )
+
+    console.print()
+    return True
+
+
+def _doctor_python(pinfo: PlatformInfo) -> bool:
+    """Show Python version info (all platforms, non-blocking)."""
+    console = get_console()
+    console.print("  [bold]Python[/bold]")
+
+    version, source, is_adequate = detect_python_version()
+    console.print(f"  [dim]INFO[/dim]  Python {version} ({source})")
+
+    if not is_adequate:
+        console.print(
+            "  [warning]WARN[/warning]  Python >= 3.10 recommended  "
+            "[dim]uv will auto-download a compatible version if needed[/dim]"
+        )
+
+    console.print()
+    return True
 
 
 def _doctor_environment(pinfo: PlatformInfo) -> None:

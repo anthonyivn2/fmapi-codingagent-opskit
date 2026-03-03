@@ -9,6 +9,50 @@ import sys
 from fmapi_opskit.agents.base import AgentConfig
 from fmapi_opskit.core.platform import PlatformInfo
 
+# Minimum Python version required by this tool
+_MIN_PYTHON = (3, 10)
+
+
+def check_xcode_clt_installed() -> bool:
+    """Check whether Xcode Command Line Tools are installed (macOS only).
+
+    Returns True if ``xcode-select -p`` exits 0, False otherwise.
+    On non-macOS systems (FileNotFoundError), returns False.
+    """
+    try:
+        result = subprocess.run(["xcode-select", "-p"], capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def get_xcode_clt_path() -> str:
+    """Return the Xcode CLT install path, or empty string if unavailable."""
+    try:
+        result = subprocess.run(["xcode-select", "-p"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+def detect_python_version() -> tuple[str, str, bool]:
+    """Detect the running Python version, its source, and adequacy.
+
+    Returns:
+        (version, source, is_adequate) where *version* is e.g. "3.12.1",
+        *source* is "uv-managed" or "system", and *is_adequate* is True
+        when the version >= 3.10.
+    """
+    vi = sys.version_info
+    version = f"{vi.major}.{vi.minor}.{vi.micro}"
+    source = "uv-managed" if ".local/share/uv" in sys.executable else "system"
+    is_adequate = (vi.major, vi.minor) >= _MIN_PYTHON
+    return version, source, is_adequate
+
 
 def require_cmd(cmd: str, error_msg: str) -> None:
     """Require a command to be available, or raise SystemExit with an error message."""

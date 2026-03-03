@@ -8,13 +8,14 @@ AGENT=""
 SETUP_ARGS=()
 
 # ── Colors (respect NO_COLOR) ────────────────────────────────────────────────
-BOLD='\033[1m' DIM='\033[2m' GREEN='\033[32m' CYAN='\033[36m' RED='\033[31m' RESET='\033[0m'
+BOLD='\033[1m' DIM='\033[2m' GREEN='\033[32m' CYAN='\033[36m' RED='\033[31m' YELLOW='\033[33m' RESET='\033[0m'
 if [[ ! -t 1 ]] || [[ -n "${NO_COLOR:-}" ]]; then
-  BOLD='' DIM='' GREEN='' CYAN='' RED='' RESET=''
+  BOLD='' DIM='' GREEN='' CYAN='' RED='' YELLOW='' RESET=''
 fi
 
 info()    { echo -e "  ${CYAN}::${RESET} $1"; }
 success() { echo -e "  ${GREEN}${BOLD}ok${RESET} $1"; }
+warn()    { echo -e "  ${YELLOW}${BOLD}!!${RESET}${YELLOW} $1${RESET}"; }
 error()   { echo -e "\n  ${RED}${BOLD}!! ERROR${RESET}${RED} $1${RESET}\n" >&2; }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -67,6 +68,15 @@ done
 if [[ ${#SETUP_ARGS[@]} -gt 0 ]] && [[ -z "$AGENT" ]]; then
   error "Unrecognized flags: ${SETUP_ARGS[*]}. Use --agent NAME to forward flags to a setup script."
   exit 1
+fi
+
+# ── Check Xcode CLT (macOS only, non-blocking) ─────────────────────────────
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  if xcode-select -p &>/dev/null; then
+    success "Xcode Command Line Tools installed."
+  else
+    warn "Xcode Command Line Tools not found. Fix: xcode-select --install"
+  fi
 fi
 
 # ── Require git ──────────────────────────────────────────────────────────────
@@ -141,6 +151,14 @@ else
     error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
     exit 1
   fi
+fi
+
+# ── Python info ──────────────────────────────────────────────────────────────
+python_info=$(uv python list --only-installed 2>/dev/null | head -1 || true)
+if [[ -n "$python_info" ]]; then
+  info "Python available: ${DIM}${python_info}${RESET}"
+else
+  info "No Python installation detected — uv will download one automatically."
 fi
 
 # ── Install CLI as global tool ───────────────────────────────────────────────

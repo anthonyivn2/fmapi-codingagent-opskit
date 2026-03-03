@@ -19,7 +19,7 @@ src/fmapi_opskit/
   core/
     version.py                                     # Read VERSION file
     platform.py                                    # OS/WSL/headless detection
-    deps.py                                        # require_cmd, install_hint (platform-specific)
+    deps.py                                        # require_cmd, install_hint, Xcode CLT + Python detection
   config/
     models.py                                      # FmapiConfig dataclass, VALID_CONFIG_KEYS
     discovery.py                                   # discover_config: search settings, parse helper, read env
@@ -38,7 +38,7 @@ src/fmapi_opskit/
     _common.py                                     # Shared command preamble helpers
     status.py                                      # Status dashboard
     reauth.py                                      # OAuth re-authentication
-    doctor.py                                      # 8 diagnostic sub-checks
+    doctor.py                                      # 10 diagnostic sub-checks
     list_models.py                                 # Endpoint table
     validate_models.py                             # Per-model validation
     uninstall.py                                   # Artifact cleanup
@@ -225,10 +225,11 @@ The test suite covers core modules with 84 tests:
 | `test_cli_flags.py` | CLI help, version, mutual exclusion, validation |
 | `test_config_validation.py` | Config file loading, JSON parsing, key validation |
 | `test_settings_manager.py` | Settings read/write/merge, permissions, legacy cleanup |
-| `test_hooks_logic.py` | Hook merge/uninstall (29+ cases, ported from bash tests) |
+| `test_hooks_logic.py` | Hook merge/uninstall (29+ cases) |
 | `test_agent_adapter.py` | AgentConfig fields, ClaudeCodeAdapter methods |
 | `test_platform.py` | OS/WSL/headless detection |
 | `test_template_renderer.py` | Placeholder substitution, permissions, error handling |
+| `test_deps.py` | Xcode CLT detection, Python version detection |
 
 Run with: `uv run pytest` or `uv run pytest -v` for verbose output.
 

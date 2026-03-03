@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+
 from rich.prompt import Prompt
+from simple_term_menu import TerminalMenu
 
 from fmapi_opskit.ui.console import get_console
 
@@ -36,7 +39,7 @@ def select_option(
     non_interactive: bool = False,
     default_index: int = 0,
 ) -> int:
-    """Interactive selector using Rich numbered menu.
+    """Interactive selector with arrow-key navigation.
 
     Args:
         prompt: The question to ask.
@@ -51,19 +54,23 @@ def select_option(
         return default_index
 
     console = get_console()
-    console.print(f"  [info]?[/info] {prompt}")
-    for i, (label, desc) in enumerate(options):
-        marker = "[bold]>[/bold]" if i == default_index else " "
-        console.print(f"    {marker} {i + 1}) [bold]{label}[/bold]  [dim]{desc}[/dim]")
+    console.print(f"  [info]?[/info] {prompt}  [dim](↑/↓ arrows, Enter to select)[/dim]")
 
-    choices = [str(i + 1) for i in range(len(options))]
-    result = Prompt.ask(
-        "  Choice",
-        choices=choices,
-        default=str(default_index + 1),
-        console=console,
+    menu_entries = [f"  {label}  ({desc})" for label, desc in options]
+
+    menu = TerminalMenu(
+        menu_entries,
+        cursor_index=default_index,
+        menu_cursor="  ❯ ",
+        menu_cursor_style=("fg_cyan", "bold"),
+        menu_highlight_style=("fg_cyan", "bold"),
     )
-    return int(result) - 1
+    chosen = menu.show()
+
+    if chosen is None:
+        sys.exit(130)  # Ctrl-C / cancelled
+
+    return chosen
 
 
 def confirm(prompt: str, default: bool = True) -> bool:

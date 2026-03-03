@@ -11,6 +11,8 @@ from fmapi_opskit.settings.manager import SettingsManager
 from fmapi_opskit.templates.renderer import render_template
 from fmapi_opskit.ui import logging as log
 
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+
 
 def write_settings(
     adapter: AgentAdapter,
@@ -54,7 +56,7 @@ def write_helper(
     """Write the API key helper script from template."""
     log.heading("API key helper")
 
-    template = script_dir / "templates" / "fmapi-key-helper.sh.template"
+    template = _TEMPLATES_DIR / "fmapi-key-helper.sh.template"
     setup_script = f"setup-fmapi-{adapter.config.id}"
 
     render_template(
@@ -84,7 +86,7 @@ def write_hooks(
     """Write the auth pre-check hook script and merge into settings."""
     log.heading("Auth pre-check hooks")
 
-    template = script_dir / "templates" / "fmapi-auth-precheck.sh.template"
+    template = _TEMPLATES_DIR / "fmapi-auth-precheck.sh.template"
 
     # Clean up legacy hook script
     legacy_hook = Path(hook_file).parent / "fmapi-subagent-precheck.sh"
