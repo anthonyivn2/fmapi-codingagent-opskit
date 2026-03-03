@@ -1,3 +1,19 @@
+# Generated FMAPI artifacts
 .claude/settings.json
 .claude/fmapi-key-helper.sh
 .claude/.fmapi-pat-cache
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Testing & Linting
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage

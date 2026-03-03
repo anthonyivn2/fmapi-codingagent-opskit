@@ -2,26 +2,57 @@
 
 ## Project Overview
 
-This repo contains setup scripts and a Claude Code plugin that configure coding agents to use foundation models served through Databricks Foundation Model API (FMAPI). Currently only Claude Code is supported, with OpenAI Codex and Gemini CLI planned. The repo includes a setup script, plugin manifest, and skill definitions — no application code.
+This repo contains a Python CLI tool and Claude Code plugin that configure coding agents to use foundation models served through Databricks Foundation Model API (FMAPI). Currently only Claude Code is supported, with OpenAI Codex and Gemini CLI planned. The CLI is distributed via `uv tool install` and provides setup, diagnostics, and management commands.
 
 ## Repository Structure
 
 ```
-setup-fmapi-claudecode.sh                          # Thin entry point: source libs, parse CLI, dispatch
-install.sh                                         # Bootstrap installer for bash <(curl ...) one-liner
+pyproject.toml                                     # Python project config (hatchling, typer, rich)
 VERSION                                            # Version file (single line, e.g., 1.0.0)
-agents/
-  claudecode.sh                                    # Claude Code agent adapter (AGENT_* vars + agent_* functions)
-lib/
-  core.sh                                          # Preamble, colors, logging, utilities, _install_hint
-  help.sh                                          # show_help (help text, uses AGENT_* variables)
-  config.sh                                        # Config discovery and file/URL loading
-  shared.sh                                        # OAuth, endpoints, validation, shared helpers
-  commands.sh                                      # All do_* command functions
-  setup.sh                                         # Setup workflow (gather, install, auth, write, smoke test)
+install.sh                                         # Bootstrap installer for bash <(curl ...) one-liner
+src/fmapi_opskit/
+  __init__.py                                      # Package init
+  cli.py                                           # Typer app: callback (global + setup flags) + 8 subcommands
+  auth.py                                          # Databricks CLI wrappers, OAuth tokens, auth flow, legacy PAT cleanup
+  core.py                                          # Version, PlatformInfo, deps (Xcode CLT, Python, install hints)
+  network.py                                       # HTTP reachability, endpoint fetch/filter/validate, gateway URLs
+  agents/
+    base.py                                        # AgentConfig dataclass + AgentAdapter Protocol
+    claudecode.py                                  # ClaudeCodeAdapter implementation
+  config/
+    models.py                                      # FmapiConfig dataclass, VALID_CONFIG_KEYS
+    discovery.py                                   # discover_config: search settings, parse helper, read env
+    loader.py                                      # load_config_file, load_config_url with validation
+  settings/
+    manager.py                                     # SettingsManager: read/write/merge settings.json
+    hooks.py                                       # Hook merge/cleanup/uninstall logic
+  commands/
+    _common.py                                     # Shared command preamble helpers
+    status.py                                      # Status dashboard
+    reauth.py                                      # OAuth re-authentication
+    doctor.py                                      # 10 diagnostic sub-checks
+    list_models.py                                 # Endpoint table
+    validate_models.py                             # Per-model validation
+    uninstall.py                                   # Artifact cleanup
+    self_update.py                                 # git pull + uv tool reinstall
+  setup/
+    gather.py                                      # gather_config_pre_auth, gather_config_models
+    install_deps.py                                # Platform-specific dependency installation
+    writer.py                                      # write_settings, write_helper, write_hooks
+    smoke_test.py                                  # Post-setup verification
+    workflow.py                                    # do_setup orchestrator + print_summary
+  ui/
+    console.py                                     # Rich Console factory with theme, NO_COLOR/pipe handling
+    logging.py                                     # info, success, warn, error, debug (Rich-based)
+    prompts.py                                     # prompt_value, select_option (Rich Prompt)
+    dashboard.py                                   # Status dashboard panels
+    tables.py                                      # Endpoint tables, doctor diagnostic tables
+    dry_run.py                                     # Dry-run plan display
+  templates/
+    renderer.py                                    # str.replace for __PLACEHOLDER__ tokens, atomic write + chmod
 templates/
-  fmapi-key-helper.sh.template                     # POSIX helper script template with __PROFILE__, __HOST__, __SETUP_SCRIPT__ placeholders
-  fmapi-auth-precheck.sh.template                   # POSIX auth pre-check hook template with __PROFILE__, __HOST__ placeholders
+  fmapi-key-helper.sh.template                     # POSIX helper script template
+  fmapi-auth-precheck.sh.template                  # POSIX auth pre-check hook template
 example-config.json                                # Example config file for --config / --config-url
 .claude-plugin/plugin.json                         # Claude Code plugin manifest
 skills/fmapi-codingagent-status/SKILL.md           # /fmapi-codingagent-status skill
@@ -30,6 +61,15 @@ skills/fmapi-codingagent-setup/SKILL.md            # /fmapi-codingagent-setup sk
 skills/fmapi-codingagent-doctor/SKILL.md           # /fmapi-codingagent-doctor skill
 skills/fmapi-codingagent-list-models/SKILL.md      # /fmapi-codingagent-list-models skill
 skills/fmapi-codingagent-validate-models/SKILL.md  # /fmapi-codingagent-validate-models skill
+tests/
+  conftest.py                                      # Fixtures: adapter, sample_settings, sample_config
+  test_cli_flags.py                                # Typer CliRunner: help, mutual exclusion, validation
+  test_config_validation.py                        # Config file loading: JSON, unknown keys, validation
+  test_settings_manager.py                         # settings.json read/write/merge, legacy cleanup
+  test_hooks_logic.py                              # Hook merge/uninstall (29+ cases)
+  test_agent_adapter.py                            # Protocol compliance, env block, plugin paths
+  test_platform.py                                 # OS/WSL/headless detection
+  test_template_renderer.py                        # Placeholder substitution, permission checks
 README.md                                          # User-facing documentation
 CLAUDE.md                                          # This file
 .gitignore                                         # Ignores generated files and Python artifacts
@@ -37,9 +77,9 @@ CLAUDE.md                                          # This file
 
 ## Supported Coding Agents
 
-| Agent | Script | Status |
+| Agent | Adapter | Status |
 |---|---|---|
-| Claude Code | `setup-fmapi-claudecode.sh` | Implemented |
+| Claude Code | `agents/claudecode.py` | Implemented |
 | OpenAI Codex | — | Planned |
 | Gemini CLI | — | Planned |
 
@@ -52,212 +92,136 @@ The repo is a Claude Code plugin providing six slash-command skills:
 | `/fmapi-codingagent-status` | Show FMAPI configuration health dashboard (OAuth health, model config) |
 | `/fmapi-codingagent-reauth` | Re-authenticate Databricks OAuth session |
 | `/fmapi-codingagent-setup` | Run full FMAPI setup (interactive or non-interactive with CLI flags) |
-| `/fmapi-codingagent-doctor` | Run comprehensive diagnostics (deps, config, profile, auth, connectivity, models) |
+| `/fmapi-codingagent-doctor` | Run comprehensive diagnostics (deps, config, profile, auth, connectivity, models, hooks) |
 | `/fmapi-codingagent-list-models` | List all serving endpoints in the workspace |
 | `/fmapi-codingagent-validate-models` | Validate configured models exist and are ready |
 
-The plugin is automatically registered in `~/.claude/plugins/installed_plugins.json` when the setup script runs. It is deregistered on `--uninstall`.
+The plugin is automatically registered in `~/.claude/plugins/installed_plugins.json` when setup runs. It is deregistered on `uninstall`.
 
 ## Key Concepts
 
-- **`setup-fmapi-claudecode.sh`** — Thin entry point (~120 lines) that sources the agent adapter (`agents/claudecode.sh`) and `lib/*.sh` modules, parses CLI flags, and dispatches to the appropriate command or setup flow. Supports `--status`, `--reauth`, `--doctor`, `--list-models`, `--validate-models`, `--self-update`, `--uninstall`, `--config`, `--config-url`, and CLI flags for non-interactive setup. Passing `--host`, `--config`, or `--config-url` enables non-interactive mode where all other flags auto-default (profile defaults to `fmapi-claudecode-profile`).
-- **`install.sh`** — Bootstrap installer for `bash <(curl ...)` one-liner. Clones the repo to `~/.fmapi-codingagent-setup/` (or `$FMAPI_HOME`). Idempotent: re-running updates an existing clone. Supports `--branch` for installing a specific branch or tag. Does not auto-run setup — prints next-step instructions only.
-- **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `lib/core.sh` into the `FMAPI_VERSION` global. Falls back to `dev` if missing.
-- **`example-config.json`** — Example JSON config file showing all supported keys. Used with `--config` or hosted remotely for `--config-url` to enable reproducible, shareable team setups. Priority chain: CLI flags > config file > existing settings > hardcoded defaults.
+- **`setup-fmapi-claudecode`** — Global CLI command installed via `uv tool install`. Provides subcommands (`status`, `reauth`, `doctor`, `list-models`, `validate-models`, `self-update`, `uninstall`, `reinstall`) and runs setup when invoked with no subcommand. Passing `--host`, `--config`, or `--config-url` enables non-interactive mode.
+- **`install.sh`** — Bootstrap installer for `bash <(curl ...)` one-liner. Clones the repo, installs `uv` if needed, and runs `uv tool install` to make the CLI globally available. Idempotent: re-running updates an existing clone. Supports `--branch` and `--agent` flags.
+- **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `core.py`. Falls back to `dev` if missing.
+- **`example-config.json`** — Example JSON config file showing all supported keys. Priority chain: CLI flags > config file > existing settings > hardcoded defaults.
 - **`.claude-plugin/plugin.json`** — Plugin manifest that registers the repo as a Claude Code plugin with the `skills/` directory.
-- **`skills/*/SKILL.md`** — Skill definitions that instruct Claude how to invoke the setup script with the appropriate flags.
-- **`fmapi-key-helper.sh`** — A POSIX `/bin/sh` script generated alongside `settings.json` that Claude Code invokes automatically via the `apiKeyHelper` setting to obtain OAuth access tokens on demand. The Databricks CLI handles token refresh transparently.
-- **`fmapi-auth-precheck.sh`** — A POSIX `/bin/sh` script registered as both a `SubagentStart` and `UserPromptSubmit` hook in `settings.json`. Runs before every subagent launch and user prompt to verify the OAuth token is still valid. Reads `hook_event_name` from stdin JSON for hook-aware output. If expired, attempts browser-based re-auth (or warns in headless environments). Always exits 0 (non-blocking).
-- **`.claude/settings.json`** — Claude Code configuration file containing `apiKeyHelper` (path to helper script), `hooks` (SubagentStart and UserPromptSubmit pre-checks), and environment variables that route requests through Databricks FMAPI.
+- **`fmapi-key-helper.sh`** — A POSIX `/bin/sh` script generated alongside `settings.json` that Claude Code invokes via `apiKeyHelper` to obtain OAuth access tokens on demand.
+- **`fmapi-auth-precheck.sh`** — A POSIX `/bin/sh` script registered as both `SubagentStart` and `UserPromptSubmit` hooks. Verifies OAuth token validity before each operation. Always exits 0 (non-blocking).
 
-## Module Architecture
+## CLI Commands
 
-The setup script is split into an agent adapter and six sourced library modules. The entry point sources them in order: `core.sh` → `agents/<agent>.sh` → `help.sh` → `config.sh` → `shared.sh` → `commands.sh` → `setup.sh`. Each module depends only on modules sourced before it.
+```
+setup-fmapi-claudecode [GLOBAL FLAGS] [SETUP FLAGS]     # runs setup (default)
+setup-fmapi-claudecode status                            # health dashboard
+setup-fmapi-claudecode doctor                            # diagnostics
+setup-fmapi-claudecode reauth                            # OAuth refresh
+setup-fmapi-claudecode list-models                       # endpoint table
+setup-fmapi-claudecode validate-models                   # model validation
+setup-fmapi-claudecode uninstall                         # cleanup
+setup-fmapi-claudecode self-update                       # git pull + reinstall
+setup-fmapi-claudecode reinstall                         # rerun with saved config
+```
 
-| Module | Contents |
-|---|---|
-| `lib/core.sh` | Cleanup trap, ANSI colors, `_OS_TYPE`/`_IS_WSL`/`_WSL_VERSION`/`VERBOSITY`/`DRY_RUN`/`FMAPI_VERSION` globals, logging (`info`, `success`, `error`, `debug`), utilities (`array_contains`, `require_cmd`, `_install_hint`, `prompt_value`, `select_option`) |
-| `agents/claudecode.sh` | Agent adapter: `AGENT_*` variables (identity, defaults, env var names) and `agent_*` functions (write env, read env, install CLI, onboarding, plugin registration, doctor checks, dry-run sections) |
-| `lib/help.sh` | `show_help()` — help text using `$AGENT_*` variables for agent-specific values |
-| `lib/config.sh` | `discover_config()`, `_CONFIG_VALID_KEYS`, `load_config_file()`, `load_config_url()` |
-| `lib/shared.sh` | `_get_oauth_token()`, `_detect_workspace_id()`, `_build_base_url()`, `_fetch_endpoints()`, `_validate_models_report()`, `_display_agent_endpoints()`, plus shared helpers: `_is_headless()`, `_require_fmapi_config()`, `_require_valid_oauth()` |
-| `lib/commands.sh` | `do_status()`, `do_reauth()`, `do_uninstall()`, `do_list_models()`, `do_validate_models()`, `do_self_update()`, `do_doctor()` (with `_doctor_*` sub-functions including `_doctor_hooks()`) |
-| `lib/setup.sh` | `gather_config_pre_auth()`, `gather_config_models()`, `install_dependencies()`, `authenticate()`, `resolve_workspace_id()`, `write_settings()`, `write_helper()`, `write_hooks()`, `run_smoke_test()`, `print_summary()`, `print_dry_run_plan()`, `do_setup()` |
+### Global Flags
 
-Key shared helpers that deduplicate repeated patterns:
-- **`_install_hint(cmd)`** — Platform-appropriate install hint for any dependency (jq, databricks, agent CLI, curl). Uses `AGENT_CLI_CMD` and `AGENT_CLI_INSTALL_CMD` for the agent's CLI.
-- **`_is_headless()`** — Detects headless SSH sessions (replaces 3 inline checks)
-- **`_require_fmapi_config(caller)`** — Common preamble: require jq + databricks, discover config, validate profile
-- **`_require_valid_oauth()`** — Check OAuth token validity with standard error message
+`--verbose`, `--quiet`, `--no-color`, `--dry-run`
 
-The global `SCRIPT_DIR` is computed once in the entry point and used by `write_helper()`, `agent_register_plugin()`, and `print_dry_run_plan()` instead of `BASH_SOURCE[0]` (which would point to the sourced lib file, not the entry script).
+### Setup Flags (used when no subcommand)
 
-## Agent Adapter Contract
+`--host`, `--profile`, `--model`, `--opus`, `--sonnet`, `--haiku`, `--ttl`, `--settings-location`, `--ai-gateway`, `--workspace-id`, `--config`, `--config-url`
 
-Each agent gets its own adapter file under `agents/` that defines the full set of `AGENT_*` variables and `agent_*` functions. The shared `lib/` modules are completely agent-agnostic — they reference only `AGENT_*` / `agent_*` symbols, never hardcode agent-specific values.
+### Validation Rules
 
-### Required Variables
+- `--verbose` + `--quiet` — mutually exclusive
+- `--dry-run` + subcommand — error (dry-run only for setup)
+- `--config` + `--config-url` — mutually exclusive
+- `--workspace-id` without `--ai-gateway` — error
+- `--workspace-id` non-numeric — error
 
-| Variable | Example (Claude Code) | Description |
-|---|---|---|
-| `AGENT_NAME` | `"Claude Code"` | Display name |
-| `AGENT_ID` | `"claudecode"` | Short ID (used in script names, paths) |
-| `AGENT_CLI_CMD` | `"claude"` | CLI command to check/run |
-| `AGENT_CLI_INSTALL_CMD` | `"curl -fsSL ... \| bash"` | Shell command to install the CLI |
-| `AGENT_SETTINGS_DIR` | `".claude"` | Settings directory name |
-| `AGENT_SETTINGS_FILENAME` | `"settings.json"` | Settings filename |
-| `AGENT_HELPER_FILENAME` | `"fmapi-key-helper.sh"` | Helper script filename |
-| `AGENT_HOOK_PRECHECK_FILENAME` | `"fmapi-auth-precheck.sh"` | Auth pre-check hook script filename |
-| `AGENT_DEFAULT_PROFILE` | `"fmapi-claudecode-profile"` | Default Databricks CLI profile name |
-| `AGENT_DEFAULT_MODEL` | `"databricks-claude-opus-4-6"` | Default primary model |
-| `AGENT_DEFAULT_OPUS` | `"databricks-claude-opus-4-6"` | Default opus model |
-| `AGENT_DEFAULT_SONNET` | `"databricks-claude-sonnet-4-6"` | Default sonnet model |
-| `AGENT_DEFAULT_HAIKU` | `"databricks-claude-haiku-4-5"` | Default haiku model |
-| `AGENT_ENDPOINT_FILTER` | `"claude\|anthropic"` | Regex for endpoint table filtering |
-| `AGENT_ENDPOINT_TITLE` | `"Anthropic Claude"` | Display title for endpoint listings |
-| `AGENT_BASE_URL_SUFFIX` | `"/serving-endpoints/anthropic"` | URL suffix appended to workspace host |
-| `AGENT_ENV_MODEL` | `"ANTHROPIC_MODEL"` | Env var name for primary model |
-| `AGENT_ENV_BASE_URL` | `"ANTHROPIC_BASE_URL"` | Env var name for base URL |
-| `AGENT_ENV_OPUS` | `"ANTHROPIC_DEFAULT_OPUS_MODEL"` | Env var name for opus model |
-| `AGENT_ENV_SONNET` | `"ANTHROPIC_DEFAULT_SONNET_MODEL"` | Env var name for sonnet model |
-| `AGENT_ENV_HAIKU` | `"ANTHROPIC_DEFAULT_HAIKU_MODEL"` | Env var name for haiku model |
-| `AGENT_ENV_TTL` | `"CLAUDE_CODE_API_KEY_HELPER_TTL_MS"` | Env var name for TTL |
-| `AGENT_REQUIRED_ENV_KEYS` | Array of 5 keys | Env keys checked by doctor |
-| `AGENT_LEGACY_CLEANUP_KEYS` | `("ANTHROPIC_AUTH_TOKEN")` | Legacy env keys to remove on write |
+## Package Architecture
 
-### Required Functions
+### Agent Adapter Pattern
 
-| Function | Description |
-|---|---|
-| `agent_settings_candidates()` | Set `_SETTINGS_CANDIDATES` array with settings file search paths |
-| `agent_read_env(settings_file)` | Read model/TTL from settings into `CFG_*` variables |
-| `agent_write_env_json(model, base_url, opus, sonnet, haiku, ttl_ms)` | Return the env JSON block for settings |
-| `agent_uninstall_env_keys_json()` | Return JSON array of env keys to clean on uninstall |
-| `agent_ensure_onboarding()` | Set agent-specific onboarding flags |
-| `agent_register_plugin(script_dir)` | Register agent plugin |
-| `agent_deregister_plugin()` | Remove agent plugin registration |
-| `agent_install_cli()` | Install agent CLI if missing |
-| `agent_doctor_extra()` | Agent-specific doctor checks (returns 0/1) |
-| `agent_dry_run_env_display(model, base_url, opus, sonnet, haiku, ttl_ms)` | Print env vars for dry-run |
-| `agent_dry_run_extra()` | Print agent-specific dry-run sections |
+- `AgentConfig` — frozen dataclass with all 25+ configuration fields (identity, defaults, env var names)
+- `AgentAdapter` — Protocol with 11 methods (write_env, read_env, settings_candidates, install_cli, etc.)
+- `ClaudeCodeAdapter` — concrete implementation for Claude Code
 
-### Internal Variable Convention
+### Settings Manager
 
-Shared `lib/` modules use `FMAPI_*` for internal bash variables (e.g., `FMAPI_MODEL`, `FMAPI_OPUS_MODEL`). The agent adapter's `agent_write_env_json()` maps these to the actual env var names written to settings (e.g., `ANTHROPIC_MODEL`).
+- `SettingsManager(path: Path)` — read/write/merge settings.json via stdlib `json`
+- `merge_env(new_env, api_key_helper, legacy_cleanup_keys)` — atomic env block update
+- `remove_fmapi_keys(uninstall_keys)` — clean uninstall, returns bool for file deletion
+- Atomic writes: write to `.tmp` then `Path.rename()`, `chmod 0o600`
 
-### Adding a New Agent
+### Hook Logic (`settings/hooks.py`)
 
-1. Create `agents/<agentid>.sh` implementing all variables and functions above.
-2. Create `setup-fmapi-<agentid>.sh` entry point that sources `agents/<agentid>.sh` after `lib/core.sh`.
-3. Add agent-specific artifacts (plugin manifests, skills) if applicable.
-4. The shared `lib/` modules work unchanged.
+- `is_fmapi_hook_entry(entry)` — regex match on `fmapi-auth-precheck|fmapi-subagent-precheck`
+- `merge_fmapi_hooks(settings, hook_command)` — filter old entries, append new for both hook types
+- `remove_fmapi_hooks(settings)` — remove FMAPI entries, preserve user hooks, clean empty sections
 
-## CLI Flags
+### Template Rendering
 
-| Flag | Description |
-|---|---|
-| `--status` | Show configuration health dashboard |
-| `--reauth` | Re-authenticate Databricks OAuth session |
-| `--doctor` | Run comprehensive diagnostics (deps, config, profile, auth, connectivity, models) |
-| `--list-models` | List all serving endpoints in the workspace |
-| `--validate-models` | Validate configured models exist and are ready |
-| `--reinstall` | Rerun setup using previously saved configuration |
-| `--self-update` | Update to the latest version (requires git clone installation) |
-| `--uninstall` | Remove all FMAPI artifacts and plugin registration |
-| `-h`, `--help` | Show help |
-| `--host URL` | Databricks workspace URL (enables non-interactive mode) |
-| `--profile NAME` | Databricks CLI profile name (default: `fmapi-claudecode-profile`) |
-| `--model MODEL` | Primary model (default: `databricks-claude-opus-4-6`) |
-| `--opus MODEL` | Opus model (default: `databricks-claude-opus-4-6`) |
-| `--sonnet MODEL` | Sonnet model (default: `databricks-claude-sonnet-4-6`) |
-| `--haiku MODEL` | Haiku model (default: `databricks-claude-haiku-4-5`) |
-| `--ttl MINUTES` | Token refresh interval in minutes (default: `60`, max: `60`, 60 recommended) |
-| `--settings-location PATH` | Settings location: `home`, `cwd`, or custom path (default: `home`) |
-| `--ai-gateway` | Use AI Gateway v2 for API routing (beta, default: off) |
-| `--workspace-id ID` | Databricks workspace ID for AI Gateway (auto-detected if omitted) |
-| `--config PATH` | Load configuration from a local JSON file |
-| `--config-url URL` | Load configuration from a remote JSON URL (HTTPS only) |
-| `--verbose` | Show debug-level output |
-| `--quiet`, `-q` | Suppress informational output (errors always shown) |
-| `--no-color` | Disable colored output (also respects `NO_COLOR` env var) |
-| `--dry-run` | Show what would happen without making changes |
+- `render_template(template_path, output_path, placeholders, mode)` — `str.replace()` for `__PLACEHOLDER__` tokens
+- Placeholder keys are passed WITHOUT the `__` prefix (e.g., `{"PROFILE": "value"}`)
+- Verifies no unsubstituted `__...__` placeholders remain
+- Atomic write with correct permissions (0o700 for scripts)
+
+### UI Layer (Rich)
+
+- Themed Console with `no_color`, `quiet`, pipe detection
+- `info()`, `success()`, `warn()`, `error()`, `debug()` helpers using Rich markup
+- `Rich.Prompt.ask()` for interactive input
+- `Rich.Table` for endpoint listings and diagnostics
+- `Rich.Panel` for status dashboard
 
 ## Development Guidelines
 
-- This is a **bash-only** project. No Python, no package manager, no build step.
-- Each coding agent should have its own setup script following the naming convention `setup-fmapi-<agent>.sh`.
-- Scripts must remain **idempotent** — re-running updates existing config rather than duplicating entries.
-- The helper script (`fmapi-key-helper.sh`) must be POSIX `/bin/sh` compatible with `set -eu`. Do not use bash-specific features in the helper.
-- Scripts use `set -euo pipefail` for strict error handling. Any new code must work under these constraints.
-- All generated files must have owner-only permissions. Never store tokens in world-readable files.
-- **Dependencies**: `jq`, `curl`, `tput`, `databricks` CLI. On macOS, `brew` is used for installation; on Linux, `apt-get`/`yum` and curl installers are used. Do not introduce additional dependencies without good reason.
+- This is a **Python** project using **Typer** + **Rich**. Use `uv` for dependency management.
+- The helper script (`fmapi-key-helper.sh`) and auth pre-check script must remain POSIX `/bin/sh` compatible. Do not use bash-specific features in templates.
+- All generated files must have owner-only permissions (`0o600` for settings, `0o700` for scripts).
 - **Never commit** `.claude/settings.json`, `fmapi-key-helper.sh`, or other files containing tokens.
-- Use [ShellCheck](https://www.shellcheck.net/) conventions when editing scripts.
-- **Module boundaries**: Add new functions to the appropriate `lib/` module based on the architecture table above. Do not add functions to the entry point — it should remain a thin dispatcher.
-- **`set -e` and functions**: Never end a function with `[[ ... ]] && { ...; exit 1; }` — use `if`/`then`/`fi` instead. The `&&` pattern returns 1 when the condition is false, which triggers `set -e` at the call site.
-- **`BASH_SOURCE[0]`**: In sourced lib files, `BASH_SOURCE[0]` points to the lib file, not the entry script. Use the global `SCRIPT_DIR` variable instead for paths relative to the repository root.
+- Use type hints for all function parameters and return values.
+- Follow Ruff lint rules: `E`, `F`, `W`, `I`, `N`, `UP`, `B`, `SIM` with line-length 100.
+- **Dependencies**: `typer`, `rich` (Python). Runtime: `databricks` CLI, `jq` (for generated helper scripts). No additional Python dependencies without good reason.
+- **Module boundaries**: Add new functions to the appropriate subpackage. Keep `cli.py` as a thin dispatcher.
 
-## Testing Changes
+## Development Workflow
 
-There are no automated tests. To verify changes:
+```bash
+# Install dev dependencies
+uv sync --group dev
 
-1. Run `bash setup-fmapi-claudecode.sh --help` and verify all flags documented.
-2. Run `bash setup-fmapi-claudecode.sh --status` — should show "no config found" or current dashboard.
-3. Run `bash setup-fmapi-claudecode.sh` end-to-end with a real Databricks workspace.
-4. Confirm `.claude/settings.json` is written correctly with `apiKeyHelper` and env vars.
-5. Verify the helper script exists with owner-only permissions.
-6. Run `bash setup-fmapi-claudecode.sh --status` — confirm dashboard shows correct config.
-7. Run `bash setup-fmapi-claudecode.sh --reauth` — confirm OAuth re-authentication works.
-8. Re-run the setup script to confirm idempotency (defaults pre-populated).
-9. Confirm `~/.claude/plugins/installed_plugins.json` has `fmapi-codingagent` entry.
-10. Run `claude` and confirm it works with FMAPI.
-11. Run `bash setup-fmapi-claudecode.sh --doctor` — confirm all 6 diagnostic categories display.
-12. Run `bash setup-fmapi-claudecode.sh --list-models` — confirm endpoint table with highlighting.
-13. Run `bash setup-fmapi-claudecode.sh --validate-models` — confirm per-model validation output.
-14. Run `--doctor`, `--list-models`, `--validate-models` with no prior config — should error gracefully.
-15. Run `bash setup-fmapi-claudecode.sh --uninstall` and confirm cleanup (including plugin deregistration).
-16. Run `bash setup-fmapi-claudecode.sh --config example-config.json` — confirm non-interactive setup from config file.
-17. Run `bash setup-fmapi-claudecode.sh --config nonexistent.json` — confirm "file not found" error.
-18. Create an invalid JSON file and run `--config` against it — confirm "not valid JSON" error.
-19. Create a config with an unknown key and run `--config` — confirm rejected with key listed.
-20. Run `bash setup-fmapi-claudecode.sh --config example-config.json --model override-model` — confirm CLI overrides config.
-21. Run `bash setup-fmapi-claudecode.sh --config x --config-url y` — confirm mutual exclusion error.
-22. Run `bash setup-fmapi-claudecode.sh --status | cat` — verify no ANSI escape codes in output.
-23. Run `NO_COLOR=1 bash setup-fmapi-claudecode.sh --status` — verify no colors.
-24. Run `bash setup-fmapi-claudecode.sh --no-color --status` — verify no colors.
-25. Run `bash setup-fmapi-claudecode.sh --quiet --status` — verify minimal output (errors only).
-26. Run `bash setup-fmapi-claudecode.sh --verbose --status` — verify debug lines appear.
-27. Run `bash setup-fmapi-claudecode.sh --dry-run --host https://example.com` — verify plan printed, no files changed.
-28. Run `bash setup-fmapi-claudecode.sh --dry-run --status` — verify error about incompatible flags.
-29. Run `SSH_CONNECTION=x bash setup-fmapi-claudecode.sh --doctor` — verify headless info line in Auth section.
-30. Run `bash setup-fmapi-claudecode.sh --dry-run` (no --host) — verify error about missing host (non-interactive mode).
-31. Run `bash setup-fmapi-claudecode.sh --self-update` — verify it fetches, checks, and reports up-to-date or pulls.
-32. Run `bash setup-fmapi-claudecode.sh --dry-run --self-update` — verify error about incompatible flags.
-33. Run `bash setup-fmapi-claudecode.sh --status` — verify version number appears in output.
-34. Run `bash setup-fmapi-claudecode.sh --doctor` — verify version appears in Dependencies section.
-35. Run `bash install.sh` locally — verify it clones to `~/.fmapi-codingagent-setup/` and prints next steps.
-36. Re-run `bash install.sh` — verify it updates the existing clone (idempotent).
-37. Run `bash install.sh --branch v1.0.0` — verify it installs a specific tag.
-38. Run `FMAPI_HOME=/tmp/test bash install.sh` — verify it installs to custom location.
-39. Run `bash ~/.fmapi-codingagent-setup/setup-fmapi-claudecode.sh --self-update` — verify it works from installed location.
-40. Run `bash setup-fmapi-claudecode.sh --dry-run --host https://... --ai-gateway` — verify gateway routing with `<to be detected>` workspace ID.
-41. Run `bash setup-fmapi-claudecode.sh --dry-run --host https://... --ai-gateway --workspace-id 123456` — verify gateway routing with explicit ID.
-42. Run `bash setup-fmapi-claudecode.sh --workspace-id 123` (no --ai-gateway) — should error.
-43. Run `bash setup-fmapi-claudecode.sh --workspace-id abc --ai-gateway` — should error (non-numeric).
-44. Run `bash setup-fmapi-claudecode.sh --status` on a gateway config — verify routing mode, workspace ID, and base URL appear.
-45. Run `bash setup-fmapi-claudecode.sh --doctor` on a gateway config — verify gateway connectivity check.
-46. Run `bash setup-fmapi-claudecode.sh --reinstall` on a gateway config — should preserve gateway settings.
-47. Run `bash setup-fmapi-claudecode.sh --config example-config.json` — verify `ai_gateway` and `workspace_id` keys accepted.
-48. Run on WSL — verify `_IS_WSL` is `true` and `_WSL_VERSION` is detected correctly.
-49. Run `--doctor` on WSL — verify Environment section shows WSL version, distro, and "(experimental)".
-50. On WSL without `wslu` or `xdg-open`, run setup — verify browser opener warning appears.
-51. Run `bash setup-fmapi-claudecode.sh --dry-run --host https://example.com` — verify "Hooks" section in dry-run output shows both SubagentStart and UserPromptSubmit.
-52. Run full setup — verify `~/.claude/fmapi-auth-precheck.sh` is created with `chmod 700`.
-53. Verify `~/.claude/settings.json` has both `hooks.SubagentStart` and `hooks.UserPromptSubmit` sections with correct command path.
-54. Run `bash setup-fmapi-claudecode.sh --status` — verify Hooks section shows "ENABLED" for both SubagentStart and UserPromptSubmit pre-check.
-55. Run `bash setup-fmapi-claudecode.sh --doctor` — verify Hooks section passes for both hook types.
-56. Re-run setup — verify idempotency (no duplicate hook entries in settings.json, legacy `fmapi-subagent-precheck` entries cleaned up).
-57. Run `bash setup-fmapi-claudecode.sh --uninstall` — verify hook script deleted and both hooks sections removed from settings.json.
+# Run the CLI
+uv run setup-fmapi-claudecode --help
+
+# Run tests
+uv run pytest
+
+# Lint and format
+uv run ruff check src/ tests/
+uv run ruff format src/ tests/
+
+# Install globally for testing
+uv tool install . --force
+setup-fmapi-claudecode --help
+```
+
+## Testing
+
+The test suite covers core modules with 84 tests:
+
+| Test File | Coverage |
+|---|---|
+| `test_cli_flags.py` | CLI help, version, mutual exclusion, validation |
+| `test_config_validation.py` | Config file loading, JSON parsing, key validation |
+| `test_settings_manager.py` | Settings read/write/merge, permissions, legacy cleanup |
+| `test_hooks_logic.py` | Hook merge/uninstall (29+ cases) |
+| `test_agent_adapter.py` | AgentConfig fields, ClaudeCodeAdapter methods |
+| `test_platform.py` | OS/WSL/headless detection |
+| `test_template_renderer.py` | Placeholder substitution, permissions, error handling |
+| `test_deps.py` | Xcode CLT detection, Python version detection |
+
+Run with: `uv run pytest` or `uv run pytest -v` for verbose output.
 
 ## Abbreviations
 
