@@ -12,7 +12,7 @@ VERSION                                            # Version file (single line, 
 install.sh                                         # Bootstrap installer for bash <(curl ...) one-liner
 src/fmapi_opskit/
   __init__.py                                      # Package init
-  cli.py                                           # Typer app: callback (global + setup flags) + 8 subcommands
+  cli.py                                           # Typer app: callback (global + setup flags) + 10 subcommands
   auth.py                                          # Databricks CLI wrappers, OAuth tokens, auth flow, legacy PAT cleanup
   core.py                                          # Version, PlatformInfo, deps (Xcode CLT, Python, install hints)
   network.py                                       # HTTP reachability, endpoint fetch/filter/validate, gateway URLs
@@ -33,7 +33,8 @@ src/fmapi_opskit/
     doctor.py                                      # 10 diagnostic sub-checks
     list_models.py                                 # Endpoint table
     validate_models.py                             # Per-model validation
-    uninstall.py                                   # Artifact cleanup
+    uninstall.py                                   # Artifact cleanup (excludes skills)
+    skills.py                                      # Install/uninstall FMAPI skill files
     self_update.py                                 # git pull + uv tool reinstall
   setup/
     gather.py                                      # gather_config_pre_auth, gather_config_models
@@ -96,7 +97,7 @@ The repo is a Claude Code plugin providing six slash-command skills:
 | `/fmapi-codingagent-list-models` | List all serving endpoints in the workspace |
 | `/fmapi-codingagent-validate-models` | Validate configured models exist and are ready |
 
-The plugin is automatically registered in `~/.claude/plugins/installed_plugins.json` when setup runs. It is deregistered on `uninstall`.
+Skills are installed on demand via `setup-fmapi-claudecode install-skills` and removed via `uninstall-skills`. They are not auto-installed during setup.
 
 ## Key Concepts
 
@@ -104,7 +105,8 @@ The plugin is automatically registered in `~/.claude/plugins/installed_plugins.j
 - **`install.sh`** — Bootstrap installer for `bash <(curl ...)` one-liner. Clones the repo, installs `uv` if needed, and runs `uv tool install` to make the CLI globally available. Idempotent: re-running updates an existing clone. Supports `--branch` and `--agent` flags.
 - **`VERSION`** — Single-line file containing the current version (e.g., `1.0.0`). Read by `core.py`. Falls back to `dev` if missing.
 - **`example-config.json`** — Example JSON config file showing all supported keys. Priority chain: CLI flags > config file > existing settings > hardcoded defaults.
-- **`.claude-plugin/plugin.json`** — Plugin manifest that registers the repo as a Claude Code plugin with the `skills/` directory.
+- **`.claude-plugin/plugin.json`** — Plugin manifest for the fmapi-codingagent plugin.
+- **`skills/`** — Skill SKILL.md files that setup copies to `~/.claude/skills/` for auto-discovery.
 - **`fmapi-key-helper.sh`** — A POSIX `/bin/sh` script generated alongside `settings.json` that Claude Code invokes via `apiKeyHelper` to obtain OAuth access tokens on demand.
 - **`fmapi-auth-precheck.sh`** — A POSIX `/bin/sh` script registered as both `SubagentStart` and `UserPromptSubmit` hooks. Verifies OAuth token validity before each operation. Always exits 0 (non-blocking).
 
@@ -117,7 +119,9 @@ setup-fmapi-claudecode doctor                            # diagnostics
 setup-fmapi-claudecode reauth                            # OAuth refresh
 setup-fmapi-claudecode list-models                       # endpoint table
 setup-fmapi-claudecode validate-models                   # model validation
-setup-fmapi-claudecode uninstall                         # cleanup
+setup-fmapi-claudecode uninstall                         # cleanup (excludes skills)
+setup-fmapi-claudecode install-skills                    # install slash command skills
+setup-fmapi-claudecode uninstall-skills                  # remove slash command skills
 setup-fmapi-claudecode self-update                       # git pull + reinstall
 setup-fmapi-claudecode reinstall                         # rerun with saved config
 ```

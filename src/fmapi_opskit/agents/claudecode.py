@@ -11,6 +11,15 @@ from pathlib import Path
 from fmapi_opskit.agents.base import AgentConfig
 from fmapi_opskit.ui import logging as log
 
+SKILL_NAMES = (
+    "fmapi-codingagent-status",
+    "fmapi-codingagent-reauth",
+    "fmapi-codingagent-setup",
+    "fmapi-codingagent-doctor",
+    "fmapi-codingagent-list-models",
+    "fmapi-codingagent-validate-models",
+)
+
 CLAUDE_CODE_CONFIG = AgentConfig(
     # Identity
     name="Claude Code",
@@ -153,65 +162,42 @@ class ClaudeCodeAdapter:
         log.success(f"Onboarding flag set in {claude_json}.")
 
     def register_plugin(self, script_dir: Path) -> None:
-        """Register plugin in ~/.claude/plugins/installed_plugins.json."""
-        plugin_manifest = script_dir / ".claude-plugin" / "plugin.json"
-        if not plugin_manifest.is_file():
+        """Copy skill files to ~/.claude/skills/ for auto-discovery."""
+        source_skills = script_dir / "skills"
+        if not source_skills.is_dir():
+            log.debug(f"No skills directory found at {source_skills}")
             return
 
-        plugins_file = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-        plugins_file.parent.mkdir(parents=True, exist_ok=True)
+        target_dir = Path.home() / ".claude" / "skills"
+        target_dir.mkdir(parents=True, exist_ok=True)
 
-        plugins: dict = {}
-        if plugins_file.is_file():
-            try:
-                plugins = json.loads(plugins_file.read_text())
-            except (json.JSONDecodeError, OSError):
-                plugins = {}
+        log.subheading("Skills")
+        copied = 0
+        for skill_dir in sorted(source_skills.iterdir()):
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            dest = target_dir / skill_dir.name
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill_md, dest / "SKILL.md")
+            copied += 1
 
-        existing_path = (plugins.get("fmapi-codingagent") or {}).get("installPath", "")
-        if existing_path == str(script_dir):
-            return  # Already registered with correct path
-
-        plugins["fmapi-codingagent"] = {
-            "scope": "user",
-            "installPath": str(script_dir),
-        }
-
-        tmp_path = plugins_file.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(plugins, indent=2) + "\n")
-        tmp_path.rename(plugins_file)
-
-        log.success(
-            "Plugin registered (skills: /fmapi-codingagent-status, "
-            "/fmapi-codingagent-reauth, /fmapi-codingagent-setup, "
-            "/fmapi-codingagent-doctor, /fmapi-codingagent-list-models, "
-            "/fmapi-codingagent-validate-models)."
-        )
+        if copied:
+            log.success(f"Installed {copied} skill(s) to {target_dir}.")
+        else:
+            log.debug("No SKILL.md files found to install.")
 
     def deregister_plugin(self) -> None:
-        """Remove plugin from ~/.claude/plugins/installed_plugins.json."""
-        plugins_file = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-        if not plugins_file.is_file():
-            return
-
-        try:
-            plugins = json.loads(plugins_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            return
-
-        if "fmapi-codingagent" not in plugins:
-            return
-
-        del plugins["fmapi-codingagent"]
-
-        if not plugins:
-            plugins_file.unlink(missing_ok=True)
-            log.success("Removed plugin registration (file deleted -- no other plugins).")
-        else:
-            tmp_path = plugins_file.with_suffix(".tmp")
-            tmp_path.write_text(json.dumps(plugins, indent=2) + "\n")
-            tmp_path.rename(plugins_file)
-            log.success(f"Removed plugin registration from {plugins_file}.")
+        """Remove FMAPI skill files from ~/.claude/skills/."""
+        skills_dir = Path.home() / ".claude" / "skills"
+        removed = 0
+        for name in SKILL_NAMES:
+            skill_dir = skills_dir / name
+            if skill_dir.is_dir():
+                shutil.rmtree(skill_dir)
+                removed += 1
+        if removed:
+            log.success(f"Removed {removed} skill(s) from {skills_dir}.")
 
     def install_cli(self) -> None:
         """Install the agent CLI if missing."""
@@ -300,22 +286,13 @@ class ClaudeCodeAdapter:
             )
         console.print()
 
-        # Plugin registration
-        console.print("  [bold]Plugin registration[/bold]")
-        plugins_file = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-        already_registered = False
-        if plugins_file.is_file():
-            try:
-                plugins = json.loads(plugins_file.read_text())
-                existing_path = (plugins.get("fmapi-codingagent") or {}).get("installPath", "")
-                already_registered = existing_path == str(script_dir)
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        if already_registered:
-            console.print("  [success]ok[/success]  Already registered")
-        else:
-            console.print(f"  [info]::[/info]  Would register plugin at [bold]{script_dir}[/bold]")
+        # Skills
+        console.print("  [bold]Skills[/bold]")
+        c = self._config
+        console.print(
+            f"  [dim]Use '{c.setup_cmd} install-skills' after setup to install "
+            f"slash commands[/dim]"
+        )
 
 
 def _get_console():

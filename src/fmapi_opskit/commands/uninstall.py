@@ -163,9 +163,6 @@ def do_uninstall(adapter: AgentAdapter) -> None:
             mgr.write(settings)
             log.success(f"Cleaned FMAPI keys from {sf} (preserved other settings).")
 
-    # Deregister plugin
-    adapter.deregister_plugin()
-
     # Remove install directory
     if has_install_dir:
         import shutil
@@ -175,6 +172,5 @@ def do_uninstall(adapter: AgentAdapter) -> None:
 
     console.print("\n[success]  Uninstall complete![/success]\n")
     log.info(
-        "To fully remove the CLI tool, run: "
-        "[info]uv tool uninstall fmapi-codingagent-opskit[/info]"
+        "To fully remove the CLI tool, run: [info]uv tool uninstall fmapi-codingagent-opskit[/info]"
     )

@@ -14,7 +14,6 @@ from fmapi_opskit.config.loader import load_config_file
 from fmapi_opskit.config.models import FileConfig, FmapiConfig
 from fmapi_opskit.setup.gather import gather_config_pre_auth
 
-
 # ---------------------------------------------------------------------------
 # Helper to run gather_config_pre_auth in non-interactive mode
 # ---------------------------------------------------------------------------
@@ -60,9 +59,7 @@ def test_workspace_id_cleared_when_host_changes(adapter):
         workspace_id="1111111111111111",
         ai_gateway="true",
     )
-    result = _run_gather(
-        adapter, old_cfg, cli_host="https://new-workspace.cloud.databricks.com"
-    )
+    result = _run_gather(adapter, old_cfg, cli_host="https://new-workspace.cloud.databricks.com")
     assert result.pending_workspace_id == "", (
         f"Expected empty workspace_id after host change, got '{result.pending_workspace_id}'"
     )
@@ -78,8 +75,7 @@ def test_workspace_id_kept_when_host_same(adapter):
     )
     result = _run_gather(adapter, old_cfg, cli_host=host)
     assert result.pending_workspace_id == "2222222222222222", (
-        f"Expected preserved workspace_id '2222222222222222', "
-        f"got '{result.pending_workspace_id}'"
+        f"Expected preserved workspace_id '2222222222222222', got '{result.pending_workspace_id}'"
     )
 
 
@@ -91,12 +87,9 @@ def test_workspace_id_cleared_with_trailing_slash_mismatch(adapter):
         ai_gateway="true",
     )
     # Same host without trailing slash — should be treated as same workspace
-    result = _run_gather(
-        adapter, old_cfg, cli_host="https://workspace.cloud.databricks.com"
-    )
+    result = _run_gather(adapter, old_cfg, cli_host="https://workspace.cloud.databricks.com")
     assert result.pending_workspace_id == "3333333333333333", (
-        f"Trailing slash should not cause host mismatch, "
-        f"got '{result.pending_workspace_id}'"
+        f"Trailing slash should not cause host mismatch, got '{result.pending_workspace_id}'"
     )
 
 
@@ -114,8 +107,7 @@ def test_cli_workspace_id_overrides_stale_config(adapter):
         cli_workspace_id="9999999999999999",
     )
     assert result.pending_workspace_id == "9999999999999999", (
-        f"--workspace-id should override stale config, "
-        f"got '{result.pending_workspace_id}'"
+        f"--workspace-id should override stale config, got '{result.pending_workspace_id}'"
     )
 
 
@@ -166,9 +158,7 @@ def _write_settings_and_helper(
     settings_dir.mkdir()
 
     helper_path = settings_dir / "fmapi-key-helper.sh"
-    helper_path.write_text(
-        f'FMAPI_PROFILE="{profile}"\nFMAPI_HOST="{host}"\necho "token"\n'
-    )
+    helper_path.write_text(f'FMAPI_PROFILE="{profile}"\nFMAPI_HOST="{host}"\necho "token"\n')
     helper_path.chmod(0o700)
 
     if workspace_id:
@@ -194,9 +184,7 @@ def _write_settings_and_helper(
 
 def test_discovery_strips_trailing_slash_from_host(tmp_path):
     """Discovered host from helper script should have trailing slash removed."""
-    adapter = _write_settings_and_helper(
-        tmp_path, host="https://workspace.cloud.databricks.com/"
-    )
+    adapter = _write_settings_and_helper(tmp_path, host="https://workspace.cloud.databricks.com/")
     cfg = discover_config(adapter)
     assert cfg.host == "https://workspace.cloud.databricks.com", (
         f"Discovery should strip trailing slash from host, got '{cfg.host}'"
@@ -205,9 +193,7 @@ def test_discovery_strips_trailing_slash_from_host(tmp_path):
 
 def test_discovery_host_without_slash_unchanged(tmp_path):
     """Discovered host without trailing slash should be unchanged."""
-    adapter = _write_settings_and_helper(
-        tmp_path, host="https://workspace.cloud.databricks.com"
-    )
+    adapter = _write_settings_and_helper(tmp_path, host="https://workspace.cloud.databricks.com")
     cfg = discover_config(adapter)
     assert cfg.host == "https://workspace.cloud.databricks.com", (
         f"Host without slash should be unchanged, got '{cfg.host}'"
@@ -225,6 +211,4 @@ def test_discovery_extracts_workspace_id_from_gateway_url(tmp_path):
     assert cfg.workspace_id == "4444444444444444", (
         f"Expected workspace_id '4444444444444444', got '{cfg.workspace_id}'"
     )
-    assert cfg.ai_gateway == "true", (
-        f"Expected ai_gateway='true', got '{cfg.ai_gateway}'"
-    )
+    assert cfg.ai_gateway == "true", f"Expected ai_gateway='true', got '{cfg.ai_gateway}'"

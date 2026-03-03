@@ -207,8 +207,6 @@ def do_setup(
         profile=gather.profile,
     )
 
-    adapter.register_plugin(script_dir)
-
     run_smoke_test(
         helper_file=gather.helper_file,
         host=gather.host,
@@ -316,8 +314,8 @@ def _print_summary(
     console.print(f"  [dim]Settings[/dim]   [bold]{settings_file}[/bold]")
     console.print(f"\n  Run [info][bold]{c.cli_cmd}[/bold][/info] to start.")
     console.print(
-        f"\n  [dim]Installation files: {settings_file}, {helper_file}, {hook_file}[/dim]"
+        f"\n  [dim]To install slash commands: "
+        f"[bold]{c.setup_cmd} install-skills[/bold][/dim]"
     )
-    console.print(
-        f"  [dim]To uninstall: [bold]{c.setup_cmd} uninstall[/bold][/dim]\n"
-    )
+    console.print(f"\n  [dim]Installation files: {settings_file}, {helper_file}, {hook_file}[/dim]")
+    console.print(f"  [dim]To uninstall: [bold]{c.setup_cmd} uninstall[/bold][/dim]\n")

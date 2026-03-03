@@ -125,7 +125,7 @@ setup-fmapi-claudecode doctor
 
 5. **Installs auth pre-check hooks** &mdash; Writes `fmapi-auth-precheck.sh` and registers it as both a `SubagentStart` and `UserPromptSubmit` hook in settings. These hooks verify OAuth token validity before each operation.
 
-6. **Registers the plugin** &mdash; Adds this repo as a Claude Code plugin to `~/.claude/plugins/installed_plugins.json`, enabling the slash commands listed in [Plugin Skills](#plugin-skills).
+6. **Prints a skills hint** &mdash; Shows how to install slash command skills via `setup-fmapi-claudecode install-skills`. See [Plugin Skills](#plugin-skills).
 
 7. **Runs a smoke test** &mdash; Verifies the helper script works and configured models are reachable.
 
@@ -229,8 +229,9 @@ The uninstall command removes all FMAPI artifacts in order:
 
 1. **Helper scripts** &mdash; deletes `fmapi-key-helper.sh` and any legacy `.fmapi-pat-cache` files
 2. **Settings** &mdash; removes FMAPI-specific keys (`apiKeyHelper`, `ANTHROPIC_*`, etc.) from `.claude/settings.json`. Non-FMAPI settings are preserved; if no other settings remain, the file is deleted entirely
-3. **Plugin registration** &mdash; deregisters `fmapi-codingagent` from `~/.claude/plugins/installed_plugins.json`
-4. **Install directory** &mdash; removes `~/.fmapi-codingagent-setup/` (the default location created by `install.sh`)
+3. **Install directory** &mdash; removes `~/.fmapi-codingagent-setup/` (the default location created by `install.sh`)
+
+Skills are managed separately. To remove them: `setup-fmapi-claudecode uninstall-skills`
 
 Before removing anything, it lists all discovered artifacts and asks for confirmation. Re-running `uninstall` when nothing is installed is safe &mdash; it reports "Nothing to uninstall" and exits.
 
@@ -251,10 +252,8 @@ rm -rf ~/.fmapi-codingagent-setup
 # Remove the helper script (default location)
 rm -f ~/.claude/fmapi-key-helper.sh
 
-# Remove FMAPI plugin registration (edit or delete)
-# If fmapi-codingagent is the only plugin:
-rm -f ~/.claude/plugins/installed_plugins.json
-# Otherwise, remove the "fmapi-codingagent" key from the JSON file
+# Remove skill files
+rm -rf ~/.claude/skills/fmapi-codingagent-*
 
 # Remove FMAPI keys from settings (edit or delete)
 # If FMAPI is the only config in ~/.claude/settings.json:
@@ -286,7 +285,9 @@ When updating an existing install that already has FMAPI configured, the install
 
 ### Plugin Skills
 
-Setup registers this repo as a Claude Code plugin, making these slash commands available:
+Run `setup-fmapi-claudecode install-skills` to enable these slash commands (copies skill files to `~/.claude/skills/`). To remove them, use `setup-fmapi-claudecode uninstall-skills`.
+
+Available skills:
 
 | Skill | Description |
 |---|---|
@@ -357,6 +358,8 @@ Commands:
   doctor                Run comprehensive diagnostics
   list-models           List all serving endpoints in the workspace
   validate-models       Validate configured models exist and are ready
+  install-skills        Install FMAPI slash command skills to ~/.claude/skills/
+  uninstall-skills      Remove FMAPI slash command skills from ~/.claude/skills/
   reinstall             Rerun setup using previously saved configuration
   self-update           Update to the latest version
   uninstall             Remove FMAPI helper scripts and settings
