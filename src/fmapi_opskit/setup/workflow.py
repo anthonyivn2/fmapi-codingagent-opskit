@@ -319,5 +319,5 @@ def _print_summary(
         f"\n  [dim]Installation files: {settings_file}, {helper_file}, {hook_file}[/dim]"
     )
     console.print(
-        f"  [dim]To uninstall: [bold]{c.cli_cmd} uninstall[/bold][/dim]\n"
+        f"  [dim]To uninstall: [bold]{c.setup_cmd} uninstall[/bold][/dim]\n"
     )
