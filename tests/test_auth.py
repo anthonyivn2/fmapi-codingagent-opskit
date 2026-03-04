@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import fmapi_opskit.auth as auth
+from fmapi_opskit.core import PlatformInfo
 
 
 def _patch_home(monkeypatch, tmp_path: Path) -> Path:
@@ -103,3 +104,80 @@ def test_clear_helper_token_cache_noop_when_missing(tmp_path):
     removed = auth.clear_helper_token_cache(str(helper))
 
     assert removed is False, "Expected no removals when cache artifacts are absent"
+
+
+
+def test_get_oauth_token_retries_when_first_token_near_expiry(monkeypatch):
+    """Near-expiry token should trigger a retry and return a refreshed token."""
+    calls = iter(
+        [
+            {"access_token": "soon-expiring", "expires_in": 30},
+            {"access_token": "fresh-token", "expires_in": 3600},
+        ]
+    )
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
+
+    token = auth.get_oauth_token("test-profile")
+
+    assert token == "fresh-token", "Expected retry to return a refreshed token"
+
+
+def test_get_oauth_token_rejects_token_that_stays_near_expiry(monkeypatch):
+    """If token never refreshes beyond buffer, helper should treat it as invalid."""
+    calls = iter(
+        [
+            {"access_token": "still-stale", "expires_in": 60},
+            {"access_token": "still-stale", "expires_in": 45},
+        ]
+    )
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
+
+    token = auth.get_oauth_token("test-profile")
+
+    assert token == "", "Expected near-expiry token to be rejected"
+
+
+def test_authenticate_clears_cache_and_retries_when_token_missing(monkeypatch):
+    """authenticate should clear cache and retry login once when token remains missing."""
+    token_values = iter(["", "", "fresh-token"])
+    login_calls: list[tuple[str, str]] = []
+    clear_calls = {"count": 0}
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "get_oauth_token", lambda profile: next(token_values))
+    monkeypatch.setattr(auth, "_cleanup_legacy_pats", lambda profile: None)
+
+    def fake_auth_login(host: str, profile: str) -> bool:
+        login_calls.append((host, profile))
+        return True
+
+    def fake_clear_token_cache() -> bool:
+        clear_calls["count"] += 1
+        return True
+
+    monkeypatch.setattr(auth, "auth_login", fake_auth_login)
+    monkeypatch.setattr(auth, "clear_token_cache", fake_clear_token_cache)
+
+    pi = PlatformInfo(os_type="Darwin", is_wsl=False, wsl_version="", wsl_distro="")
+    auth.authenticate("https://example.cloud.databricks.com", "test-profile", pi)
+
+    assert login_calls == [
+        ("https://example.cloud.databricks.com", "test-profile"),
+        ("https://example.cloud.databricks.com", "test-profile"),
+    ]
+    assert clear_calls["count"] == 1, "Expected a single token-cache clear before retry"
+
+
+def test_clear_token_cache_deletes_cache_file(tmp_path, monkeypatch):
+    """clear_token_cache should remove token-cache.json when present."""
+    cache_file = _patch_home(monkeypatch, tmp_path)
+    cache_file.write_text('{"ok": true}')
+
+    cleared = auth.clear_token_cache()
+
+    assert cleared is True
+    assert not cache_file.exists()

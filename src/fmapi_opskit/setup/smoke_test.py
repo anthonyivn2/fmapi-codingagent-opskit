@@ -39,7 +39,15 @@ def run_smoke_test(
         if result.returncode == 0 and result.stdout.strip():
             log.success("Helper script returns a valid token.")
         else:
-            console.print("  [warning]WARN[/warning]  Helper script did not return a token.")
+            stderr = (result.stderr or "").strip()
+            if stderr:
+                detail = stderr.splitlines()[-1]
+                console.print(
+                    "  [warning]WARN[/warning]  "
+                    f"Helper script did not return a token: [dim]{detail}[/dim]"
+                )
+            else:
+                console.print("  [warning]WARN[/warning]  Helper script did not return a token.")
             warnings += 1
     except Exception:
         console.print(f"  [warning]WARN[/warning]  Helper script is not executable: {helper_file}")
