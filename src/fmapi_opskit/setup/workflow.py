@@ -22,7 +22,7 @@ from fmapi_opskit.setup.gather import (
 )
 from fmapi_opskit.setup.install_deps import install_dependencies
 from fmapi_opskit.setup.smoke_test import run_smoke_test
-from fmapi_opskit.setup.writer import write_helper, write_hooks, write_settings
+from fmapi_opskit.setup.writer import cleanup_legacy_hooks, write_helper, write_settings
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console, get_verbosity
 from fmapi_opskit.ui.dry_run import display_dry_run_plan
@@ -113,7 +113,6 @@ def do_setup(
             ttl_ms=gather.ttl_ms,
             settings_file=gather.settings_file,
             helper_file=gather.helper_file,
-            hook_file=gather.hook_file,
             ai_gateway_enabled=gather.ai_gateway_enabled,
             pending_workspace_id=gather.pending_workspace_id,
             script_dir=script_dir,
@@ -192,19 +191,14 @@ def do_setup(
 
     write_helper(
         adapter,
-        script_dir=script_dir,
         helper_file=gather.helper_file,
         host=gather.host,
         profile=gather.profile,
     )
 
-    write_hooks(
-        adapter,
-        script_dir=script_dir,
+    # Clean up legacy hooks from prior installations (hooks are no longer used)
+    cleanup_legacy_hooks(
         settings_file=gather.settings_file,
-        hook_file=gather.hook_file,
-        host=gather.host,
-        profile=gather.profile,
     )
 
     run_smoke_test(
@@ -231,7 +225,6 @@ def do_setup(
         ai_gateway_enabled=gather.ai_gateway_enabled,
         workspace_id=workspace_id,
         helper_file=gather.helper_file,
-        hook_file=gather.hook_file,
         settings_file=gather.settings_file,
     )
 
@@ -280,7 +273,6 @@ def _print_summary(
     ai_gateway_enabled: bool,
     workspace_id: str,
     helper_file: str,
-    hook_file: str,
     settings_file: str,
 ) -> None:
     """Print the post-setup summary."""
@@ -310,12 +302,10 @@ def _print_summary(
         f"  [dim]Auth[/dim]       [bold]OAuth (auto-refresh, {ttl_minutes}m check interval)[/bold]"
     )
     console.print(f"  [dim]Helper[/dim]     [bold]{helper_file}[/bold]")
-    console.print(f"  [dim]Hook[/dim]       [bold]{hook_file}[/bold]")
     console.print(f"  [dim]Settings[/dim]   [bold]{settings_file}[/bold]")
     console.print(f"\n  Run [info][bold]{c.cli_cmd}[/bold][/info] to start.")
     console.print(
-        f"\n  [dim]To install slash commands: "
-        f"[bold]{c.setup_cmd} install-skills[/bold][/dim]"
+        f"\n  [dim]To install slash commands: [bold]{c.setup_cmd} install-skills[/bold][/dim]"
     )
-    console.print(f"\n  [dim]Installation files: {settings_file}, {helper_file}, {hook_file}[/dim]")
+    console.print(f"\n  [dim]Installation files: {settings_file}, {helper_file}[/dim]")
     console.print(f"  [dim]To uninstall: [bold]{c.setup_cmd} uninstall[/bold][/dim]\n")
