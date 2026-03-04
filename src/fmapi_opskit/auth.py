@@ -228,3 +228,36 @@ def cleanup_legacy_cache(settings_base: str) -> None:
     if legacy_cache.is_file():
         legacy_cache.unlink()
         log.success("Removed legacy PAT cache.")
+
+
+def clear_helper_token_cache(helper_file: str) -> bool:
+    """Clear local helper token cache/lock files to force fresh token retrieval.
+
+    Returns True if at least one cache artifact was removed.
+    """
+    if not helper_file:
+        return False
+    helper_path = Path(helper_file)
+
+    removed = False
+    cache_file = helper_path.parent / ".fmapi-token-cache"
+    lock_dir = helper_path.parent / ".fmapi-token-lock"
+
+    if cache_file.is_file():
+        try:
+            cache_file.unlink()
+            removed = True
+        except OSError:
+            pass
+
+    if lock_dir.is_dir():
+        try:
+            for child in lock_dir.iterdir():
+                if child.is_file():
+                    child.unlink()
+            lock_dir.rmdir()
+            removed = True
+        except OSError:
+            pass
+
+    return removed

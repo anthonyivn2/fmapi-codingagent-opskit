@@ -73,3 +73,33 @@ def test_get_oauth_token_repairs_cache_before_fetch(tmp_path, monkeypatch):
     token = auth.get_oauth_token("test-profile")
 
     assert token == "abc", f"Expected access token from mocked JSON response, got '{token}'"
+
+
+def test_clear_helper_token_cache_removes_cache_and_lock(tmp_path):
+    """clear_helper_token_cache should remove cache and lock artifacts."""
+    helper = tmp_path / ".claude" / "fmapi-key-helper.sh"
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("#!/bin/sh\n")
+
+    cache_file = helper.parent / ".fmapi-token-cache"
+    lock_dir = helper.parent / ".fmapi-token-lock"
+    cache_file.write_text("stale")
+    lock_dir.mkdir()
+    (lock_dir / "pid").write_text("123")
+
+    removed = auth.clear_helper_token_cache(str(helper))
+
+    assert removed is True, "Expected cache cleanup to report removals"
+    assert not cache_file.exists(), "Token cache file should be removed"
+    assert not lock_dir.exists(), "Token lock directory should be removed"
+
+
+def test_clear_helper_token_cache_noop_when_missing(tmp_path):
+    """clear_helper_token_cache should be a no-op when artifacts do not exist."""
+    helper = tmp_path / ".claude" / "fmapi-key-helper.sh"
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("#!/bin/sh\n")
+
+    removed = auth.clear_helper_token_cache(str(helper))
+
+    assert removed is False, "Expected no removals when cache artifacts are absent"

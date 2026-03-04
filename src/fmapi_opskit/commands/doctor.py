@@ -51,7 +51,8 @@ def do_doctor(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
         any_fail = True
     if not _doctor_models(adapter, cfg):
         any_fail = True
-    if not _doctor_hooks(cfg):
+    _doctor_hooks(cfg)
+    if not _doctor_token_cache(cfg):
         any_fail = True
 
     if any_fail:
@@ -421,46 +422,140 @@ def _doctor_models(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
     return ok
 
 
-def _doctor_hooks(cfg: FmapiConfig) -> bool:
+def _doctor_hooks(cfg: FmapiConfig) -> None:
+    """Check for legacy hooks — informational only (hooks are no longer used)."""
     console = get_console()
     console.print("  [bold]Hooks[/bold]")
 
     if not cfg.found:
-        console.print("  [warning]SKIP[/warning]  No configuration found")
+        console.print("  [dim]SKIP[/dim]  No configuration found")
         console.print()
-        return True
+        return
 
     settings: dict = {}
     if cfg.settings_file:
         with contextlib.suppress(json.JSONDecodeError, OSError):
             settings = json.loads(Path(cfg.settings_file).read_text())
 
-    ok = True
+    has_legacy = False
     for hook_type in ("SubagentStart", "UserPromptSubmit"):
         hook_cmd = get_fmapi_hook_command(settings, hook_type)
+        if hook_cmd:
+            has_legacy = True
+            console.print(
+                f"  [warning]INFO[/warning]  Legacy {hook_type} hook found  "
+                "[dim]Will be removed on next setup run[/dim]"
+            )
 
-        if not hook_cmd:
+    if not has_legacy:
+        console.print(
+            "  [success]PASS[/success]  No legacy hooks  "
+            "[dim]Token management handled by apiKeyHelper[/dim]"
+        )
+
+    console.print()
+
+
+def _doctor_token_cache(cfg: FmapiConfig) -> bool:
+    """Check token cache and lock health."""
+    import time
+
+    console = get_console()
+    console.print("  [bold]Token Cache[/bold]")
+    ok = True
+
+    if not cfg.found or not cfg.helper_file:
+        console.print("  [dim]SKIP[/dim]  No configuration found")
+        console.print()
+        return True
+
+    cache_dir = Path(cfg.helper_file).parent
+    cache_file = cache_dir / ".fmapi-token-cache"
+    lock_dir = cache_dir / ".fmapi-token-lock"
+
+    # Check token cache
+    if cache_file.is_file():
+        try:
+            lines = cache_file.read_text().strip().split("\n")
+            if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
+                cache_ts = int(lines[0])
+                expiry_epoch = int(lines[3]) if lines[3].isdigit() else 0
+                age = int(time.time()) - cache_ts
+
+                if expiry_epoch > 0:
+                    remaining = expiry_epoch - int(time.time())
+                    if remaining <= 300:
+                        console.print(
+                            "  [dim]INFO[/dim]  Token cache near expiry  "
+                            "[dim]Will be refreshed before next use[/dim]"
+                        )
+
+                if age < 240:
+                    console.print(
+                        f"  [success]PASS[/success]  Token cache is fresh  "
+                        f"[dim]Age: {age}s (max 240s)[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"  [dim]INFO[/dim]  Token cache is stale  "
+                        f"[dim]Age: {age}s — will refresh on next use[/dim]"
+                    )
+            elif len(lines) >= 2 and lines[0].isdigit() and lines[1]:
+                cache_ts = int(lines[0])
+                age = int(time.time()) - cache_ts
+                if age < 240:
+                    console.print(
+                        f"  [success]PASS[/success]  Token cache is fresh (legacy format)  "
+                        f"[dim]Age: {age}s (max 240s)[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"  [dim]INFO[/dim]  Token cache is stale (legacy format)  "
+                        f"[dim]Age: {age}s — will refresh on next use[/dim]"
+                    )
+            else:
+                console.print(
+                    "  [warning]WARN[/warning]  Token cache is malformed  "
+                    f"[dim]Fix: rm {cache_file}[/dim]"
+                )
+        except OSError:
             console.print(
-                f"  [warning]WARN[/warning]  {hook_type} hook not configured  "
-                "[dim]Fix: re-run setup[/dim]"
+                "  [warning]WARN[/warning]  Cannot read token cache  "
+                f"[dim]Fix: rm {cache_file}[/dim]"
             )
-            ok = False
-        elif not Path(hook_cmd).is_file():
+    else:
+        console.print(
+            "  [dim]INFO[/dim]  No token cache yet  [dim]Will be created on first API call[/dim]"
+        )
+
+    # Check for stale lock
+    if lock_dir.is_dir():
+        pid_file = lock_dir / "pid"
+        stale = True
+        if pid_file.is_file():
+            try:
+                pid_str = pid_file.read_text().strip()
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    try:
+                        os.kill(pid, 0)
+                        stale = False  # Process is alive — lock is active
+                        console.print(
+                            f"  [dim]INFO[/dim]  Token lock held by PID {pid}  "
+                            "[dim]Active refresh in progress[/dim]"
+                        )
+                    except OSError:
+                        pass  # Process is dead — stale lock
+            except OSError:
+                pass
+
+        if stale:
             console.print(
-                f"  [error]FAIL[/error]  {hook_type} hook script not found: {hook_cmd}  "
-                "[dim]Fix: re-run setup[/dim]"
+                f"  [warning]WARN[/warning]  Stale token lock detected  "
+                f"[dim]Fix: rm -rf {lock_dir}[/dim]"
             )
-            ok = False
-        elif not os.access(hook_cmd, os.X_OK):
-            console.print(
-                f"  [error]FAIL[/error]  {hook_type} hook script not executable  "
-                f"[dim]Fix: chmod 700 {hook_cmd}[/dim]"
-            )
-            ok = False
-        else:
-            console.print(
-                f"  [success]PASS[/success]  {hook_type} pre-check hook  [dim]{hook_cmd}[/dim]"
-            )
+    else:
+        console.print("  [success]PASS[/success]  No stale token locks")
 
     console.print()
     return ok
