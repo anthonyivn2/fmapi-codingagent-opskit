@@ -77,6 +77,56 @@ def write_helper(
     log.success(f"Helper script written to {helper_file}.")
 
 
+def helper_needs_migration(helper_file: str) -> bool:
+    """Return True when helper script matches known legacy patterns."""
+    if not helper_file:
+        return False
+
+    helper_path = Path(helper_file)
+    if not helper_path.is_file():
+        return False
+
+    try:
+        helper_text = helper_path.read_text()
+    except OSError:
+        return False
+
+    if "token=$(_fetch_token)" in helper_text:
+        return True
+
+    if "_fmapi_last_expires_in" in helper_text and "_fmapi_last_token" not in helper_text:
+        return True
+
+    return False
+
+
+def migrate_helper_if_needed(
+    adapter: AgentAdapter,
+    *,
+    helper_file: str,
+    host: str,
+    profile: str,
+    reason: str,
+) -> bool:
+    """Rewrite helper script when legacy patterns are detected.
+
+    Returns True if migration was performed.
+    """
+    if not helper_needs_migration(helper_file):
+        return False
+
+    if not host or not profile:
+        log.warn(
+            "Detected legacy helper script but missing host/profile; "
+            f"skipping migration during {reason}."
+        )
+        return False
+
+    log.info(f"Legacy helper script detected during {reason}; refreshing it now.")
+    write_helper(adapter, helper_file=helper_file, host=host, profile=profile)
+    return True
+
+
 def cleanup_legacy_hooks(
     *,
     settings_file: str,

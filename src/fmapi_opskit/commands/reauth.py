@@ -10,6 +10,7 @@ from fmapi_opskit.auth import auth_login, check_oauth_status, clear_helper_token
 from fmapi_opskit.commands._common import require_fmapi_config
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.core import PlatformInfo
+from fmapi_opskit.setup.writer import migrate_helper_if_needed
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 
@@ -31,6 +32,14 @@ def do_reauth(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
         log.info(
             "If the browser does not open, install wslu: [info]sudo apt-get install -y wslu[/info]"
         )
+
+    migrate_helper_if_needed(
+        adapter,
+        helper_file=cfg.helper_file,
+        host=cfg.host,
+        profile=cfg.profile,
+        reason="reauth",
+    )
 
     log.info(f"Re-authenticating with Databricks (profile: {cfg.profile}) ...")
 

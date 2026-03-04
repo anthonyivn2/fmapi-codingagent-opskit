@@ -273,6 +273,7 @@ def reinstall() -> None:
     from fmapi_opskit.auth import has_databricks_cli
     from fmapi_opskit.config.discovery import discover_config
     from fmapi_opskit.setup.workflow import do_setup
+    from fmapi_opskit.setup.writer import migrate_helper_if_needed
     from fmapi_opskit.ui import logging as log
 
     if not has_databricks_cli():
@@ -288,6 +289,14 @@ def reinstall() -> None:
     log.info(
         f"Re-installing with existing config ({cfg.host}, "
         f"profile: {cfg.profile or c.default_profile})"
+    )
+
+    migrate_helper_if_needed(
+        adapter,
+        helper_file=cfg.helper_file,
+        host=cfg.host,
+        profile=cfg.profile or c.default_profile,
+        reason="reinstall",
     )
 
     do_setup(
