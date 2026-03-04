@@ -61,7 +61,7 @@ def do_setup(
             non_interactive = True
             cli_host = cli_host or cfg.host
             cli_profile = cli_profile or cfg.profile or c.default_profile
-            cli_ttl = cli_ttl or cfg.ttl or "60"
+            cli_ttl = cli_ttl or cfg.ttl or "55"
             cli_model = cli_model or cfg.model or c.default_model
             cli_opus = cli_opus or cfg.opus or c.default_opus
             cli_sonnet = cli_sonnet or cfg.sonnet or c.default_sonnet
@@ -244,7 +244,7 @@ def _show_reuse_summary(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
     console.print("\n  [bold]Existing configuration found:[/bold]\n")
     console.print(f"  [dim]Workspace[/dim]  [bold]{cfg.host}[/bold]")
     console.print(f"  [dim]Profile[/dim]    [bold]{cfg.profile or c.default_profile}[/bold]")
-    console.print(f"  [dim]TTL[/dim]        [bold]{cfg.ttl or '60'}m[/bold]")
+    console.print(f"  [dim]TTL[/dim]        [bold]{cfg.ttl or '55'}m[/bold]")
     console.print(f"  [dim]Model[/dim]      [bold]{cfg.model or c.default_model}[/bold]")
     console.print(f"  [dim]Opus[/dim]       [bold]{cfg.opus or c.default_opus}[/bold]")
     console.print(f"  [dim]Sonnet[/dim]     [bold]{cfg.sonnet or c.default_sonnet}[/bold]")

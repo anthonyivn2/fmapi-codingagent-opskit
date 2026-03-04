@@ -39,7 +39,7 @@ setup-fmapi-claudecode \
 | `--opus MODEL` | Opus model | `--opus databricks-claude-opus-4-6` |
 | `--sonnet MODEL` | Sonnet model | `--sonnet databricks-claude-sonnet-4-6` |
 | `--haiku MODEL` | Haiku model | `--haiku databricks-claude-haiku-4-5` |
-| `--ttl MINUTES` | Token refresh interval in minutes (default: `60`, max: `60`, 60 recommended) | `--ttl 60` |
+| `--ttl MINUTES` | Token refresh interval in minutes (default: `55`, max: `60`, 55 recommended) | `--ttl 55` |
 | `--settings-location PATH` | Where to write settings (`home`, `cwd`, or a custom path) | `--settings-location home` |
 | `--ai-gateway` | Use AI Gateway v2 for API routing (beta, default: off) | `--ai-gateway` |
 | `--workspace-id ID` | Databricks workspace ID for AI Gateway (auto-detected if omitted) | `--workspace-id 1234567890` |

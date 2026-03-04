@@ -127,6 +127,20 @@ def _doctor_environment(pinfo: PlatformInfo) -> None:
     console.print("  [bold]Environment[/bold]")
     console.print(f"  [dim]INFO[/dim]  OS: {pinfo.os_type}")
 
+    if os.environ.get("DATABRICKS_TOKEN"):
+        console.print(
+            "  [warning]WARN[/warning]  DATABRICKS_TOKEN is set in your shell env  "
+            "[dim]This can override profile-based OAuth and cause Invalid Token errors. "
+            "Unset it before launching Claude Code.[/dim]"
+        )
+
+    for env_key in ("DATABRICKS_HOST", "DATABRICKS_AUTH_TYPE"):
+        if os.environ.get(env_key):
+            console.print(
+                f"  [warning]WARN[/warning]  {env_key} is set in your shell env  "
+                "[dim]It may override profile-based auth behavior.[/dim]"
+            )
+
     if pinfo.is_wsl:
         console.print(
             f"  [dim]INFO[/dim]  WSL version: {pinfo.wsl_version or 'unknown'}  "

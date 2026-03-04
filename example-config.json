@@ -6,7 +6,7 @@
   "opus": "databricks-claude-opus-4-6",
   "sonnet": "databricks-claude-sonnet-4-6",
   "haiku": "databricks-claude-haiku-4-5",
-  "ttl": 60,
+  "ttl": 55,
   "settings_location": "home",
   "ai_gateway": false,
   "workspace_id": ""

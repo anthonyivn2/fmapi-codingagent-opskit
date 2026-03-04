@@ -4,6 +4,17 @@ set -eu
 FMAPI_PROFILE="__PROFILE__"
 FMAPI_HOST="__HOST__"
 
+# Run Databricks CLI without env-based auth overrides (use profile-based OAuth only)
+_dbx() {
+  env \
+    -u DATABRICKS_TOKEN \
+    -u DATABRICKS_HOST \
+    -u DATABRICKS_AUTH_TYPE \
+    -u DATABRICKS_CLIENT_ID \
+    -u DATABRICKS_CLIENT_SECRET \
+    databricks "$@"
+}
+
 # Read hook event name from stdin JSON (Claude Code passes context via stdin)
 HOOK_EVENT_NAME="unknown"
 if [ ! -t 0 ]; then
@@ -11,9 +22,53 @@ if [ ! -t 0 ]; then
   HOOK_EVENT_NAME=$(printf '%s' "$_stdin" | jq -r '.hook_event_name // "unknown"' 2>/dev/null) || HOOK_EVENT_NAME="unknown"
 fi
 
-# Happy path: token is still valid (fast — ~100ms when cached)
-if databricks auth token --profile "$FMAPI_PROFILE" >/dev/null 2>&1; then
-  exit 0
+# Refresh early when token has <5 minutes remaining to reduce 403s in long sessions
+_EXPIRY_BUFFER_SECONDS=300
+
+_fetch_token_json() {
+  _dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true
+}
+
+_get_expires_in_seconds() {
+  printf '%s' "$1" | jq -r '
+    (
+      .expires_in // .expiresIn //
+      (
+        (.expiry // .expires_at // .expiresAt // empty)
+        | (fromdateiso8601? - now)
+      )
+    )
+    | tonumber?
+    | if . == null then empty else floor end
+  ' 2>/dev/null || true
+}
+
+_is_expiring_soon() {
+  _exp_in="$1"
+  if [ -z "$_exp_in" ]; then
+    return 1
+  fi
+  case "$_exp_in" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$_exp_in" -le "$_EXPIRY_BUFFER_SECONDS" ] 2>/dev/null
+}
+
+# Happy path: token is valid and not near expiry
+_token_json=$(_fetch_token_json)
+if [ -n "$_token_json" ]; then
+  _exp_in=$(_get_expires_in_seconds "$_token_json")
+  if ! _is_expiring_soon "$_exp_in"; then
+    exit 0
+  fi
+
+  # Near-expiry path: fetch once more so Databricks CLI can refresh if available
+  _token_json=$(_fetch_token_json)
+  _exp_in=$(_get_expires_in_seconds "$_token_json")
+  if ! _is_expiring_soon "$_exp_in"; then
+    printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"FMAPI: OAuth token was near expiry and has been refreshed."}}\n' "$HOOK_EVENT_NAME"
+    exit 0
+  fi
 fi
 
 # Token expired — attempt refresh
@@ -38,9 +93,9 @@ fi
 # Attempt browser-based re-auth with timeout
 _reauth_ok=false
 if command -v timeout >/dev/null 2>&1; then
-  timeout 30 databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
+  env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET timeout 30 databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
 else
-  databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
+  _dbx auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
 fi
 
 if [ "$_reauth_ok" = true ]; then
