@@ -299,7 +299,7 @@ def reinstall() -> None:
         cli_opus=cfg.opus or c.default_opus,
         cli_sonnet=cfg.sonnet or c.default_sonnet,
         cli_haiku=cfg.haiku or c.default_haiku,
-        cli_ttl=cfg.ttl or "60",
+        cli_ttl=cfg.ttl or "55",
         cli_settings_location="",
         cli_ai_gateway=cfg.ai_gateway or "false",
         cli_workspace_id=cfg.workspace_id or "",

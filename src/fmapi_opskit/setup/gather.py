@@ -74,7 +74,7 @@ def gather_config_pre_auth(
     default_profile = _first_non_empty(
         cli_profile, file_cfg.profile, cfg.profile, c.default_profile
     )
-    default_ttl = _first_non_empty(cli_ttl, file_cfg.ttl, cfg.ttl, "60")
+    default_ttl = _first_non_empty(cli_ttl, file_cfg.ttl, cfg.ttl, "55")
 
     # Store model defaults for gather_config_models
     result.default_model = _first_non_empty(cli_model, file_cfg.model, cfg.model, c.default_model)
@@ -143,7 +143,7 @@ def gather_config_pre_auth(
 
     # Token refresh interval
     result.ttl_minutes = prompt_value(
-        "Token refresh interval in minutes (60 recommended)",
+        "Token refresh interval in minutes (55 recommended)",
         cli_ttl,
         default_ttl,
         non_interactive,
@@ -160,6 +160,11 @@ def gather_config_pre_auth(
         log.warn(
             "Token refresh interval under 15 minutes may cause failures during "
             "long-running subagent calls."
+        )
+    if int(result.ttl_minutes) == 60:
+        log.warn(
+            "A 60-minute refresh interval may hit token-expiry edge cases in long sessions. "
+            "55 minutes is recommended."
         )
     result.ttl_ms = str(int(result.ttl_minutes) * 60000)
 

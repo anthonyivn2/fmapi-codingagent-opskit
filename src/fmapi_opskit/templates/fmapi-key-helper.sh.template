@@ -14,9 +14,20 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+# Run Databricks CLI without env-based auth overrides (use profile-based OAuth only)
+_dbx() {
+  env \
+    -u DATABRICKS_TOKEN \
+    -u DATABRICKS_HOST \
+    -u DATABRICKS_AUTH_TYPE \
+    -u DATABRICKS_CLIENT_ID \
+    -u DATABRICKS_CLIENT_SECRET \
+    databricks "$@"
+}
+
 # Get OAuth access token (databricks CLI auto-refreshes using refresh token)
 _fetch_token() {
-  databricks auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null \
+  _dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null \
     | jq -r '.access_token // empty'
 }
 
@@ -54,9 +65,9 @@ fi
 
 # Use timeout if available (standard on Linux, may not exist on macOS)
 if command -v timeout >/dev/null 2>&1; then
-  _reauth_ok=false; timeout 30 databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
+  _reauth_ok=false; env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET timeout 30 databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
 else
-  _reauth_ok=false; databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
+  _reauth_ok=false; _dbx auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
 fi
 if [ "$_reauth_ok" = true ]; then
   token=$(_fetch_token) || true

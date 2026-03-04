@@ -123,7 +123,7 @@ setup-fmapi-claudecode doctor
 
 4. **Creates an API key helper script** &mdash; Writes `fmapi-key-helper.sh` alongside the settings file. Claude Code invokes this automatically via the [`apiKeyHelper`](https://docs.anthropic.com/en/docs/claude-code/settings#available-settings) setting to obtain OAuth access tokens on demand.
 
-5. **Installs auth pre-check hooks** &mdash; Writes `fmapi-auth-precheck.sh` and registers it as both a `SubagentStart` and `UserPromptSubmit` hook in settings. These hooks verify OAuth token validity before each operation.
+5. **Installs auth pre-check hooks** &mdash; Writes `fmapi-auth-precheck.sh` and registers it as both a `SubagentStart` and `UserPromptSubmit` hook in settings. These hooks run before each user prompt and subagent start to verify OAuth token validity and near-expiry freshness.
 
 6. **Prints a skills hint** &mdash; Shows how to install slash command skills via `setup-fmapi-claudecode install-skills`. See [Plugin Skills](#plugin-skills).
 
@@ -371,7 +371,7 @@ Setup options (used when no subcommand, skip interactive prompts):
   --opus MODEL          Opus model (default: databricks-claude-opus-4-6)
   --sonnet MODEL        Sonnet model (default: databricks-claude-sonnet-4-6)
   --haiku MODEL         Haiku model (default: databricks-claude-haiku-4-5)
-  --ttl MINUTES         Token refresh interval in minutes (default: 60, max: 60, 60 recommended)
+  --ttl MINUTES         Token refresh interval in minutes (default: 55, max: 60, 55 recommended)
   --settings-location   Where to write settings: "home", "cwd", or path (default: home)
   --ai-gateway          Use AI Gateway v2 for API routing (beta, default: off)
   --workspace-id ID     Databricks workspace ID for AI Gateway (auto-detected if omitted)
@@ -393,7 +393,7 @@ Global options:
 
 #### Token Management
 
-Claude Code invokes the helper script every 60 minutes by default (configurable via `--ttl`, max 60 minutes). The helper calls `databricks auth token`, which returns the current OAuth access token and automatically refreshes it using the stored refresh token. If the refresh token has expired due to extended inactivity, the helper falls back to `databricks auth login` to trigger browser-based re-authentication. Values under 15 minutes are not recommended as they may cause failures during long-running subagent calls.
+Claude Code invokes the helper script every 55 minutes by default (configurable via `--ttl`, max 60 minutes). The helper calls `databricks auth token`, which returns the current OAuth access token and automatically refreshes it using the stored refresh token. If the refresh token has expired due to extended inactivity, the helper falls back to `databricks auth login` to trigger browser-based re-authentication. The pre-check hook also runs on `UserPromptSubmit` and `SubagentStart` to validate token freshness before work begins. A 55-minute interval is recommended to avoid expiry edge cases in long sessions; values under 15 minutes are not recommended as they may cause failures during long-running subagent calls.
 
 ### Troubleshooting
 
@@ -432,6 +432,10 @@ This means the helper script that supplies OAuth tokens is failing. To diagnose:
 3. If the helper script is missing or not executable, re-run setup to regenerate it:
    ```bash
    setup-fmapi-claudecode reinstall
+   ```
+4. If you use other Databricks tools, ensure shell-level auth overrides are not set when launching Claude Code:
+   ```bash
+   unset DATABRICKS_TOKEN DATABRICKS_HOST DATABRICKS_AUTH_TYPE
    ```
 
 ---
