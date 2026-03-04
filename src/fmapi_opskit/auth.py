@@ -83,6 +83,8 @@ def auth_login(host: str, profile: str) -> bool:
 
     Returns True if the command succeeded.
     """
+    repair_malformed_token_cache()
+
     result = run_databricks(
         "auth",
         "login",
@@ -107,6 +109,9 @@ def get_oauth_token(profile: str) -> str:
     """
     if not profile:
         return ""
+
+    repair_malformed_token_cache()
+
     data = run_databricks_json("auth", "token", profile=profile)
     if isinstance(data, dict):
         return data.get("access_token", "")
@@ -128,6 +133,9 @@ def authenticate(host: str, profile: str, platform_info: PlatformInfo) -> None: 
     from fmapi_opskit.ui import logging as log
 
     log.heading("Authenticating")
+
+    if repair_malformed_token_cache():
+        log.warn("Detected malformed Databricks CLI token cache; removed it and retrying auth.")
 
     token = get_oauth_token(profile)
     log.debug(f"authenticate: existing token={'present' if token else 'missing'}")
@@ -186,6 +194,30 @@ def _cleanup_legacy_pats(profile: str) -> None:
         for tid in old_ids:
             run_databricks("tokens", "delete", tid, profile=profile)
         log.success("Legacy PATs revoked.")
+
+
+def repair_malformed_token_cache() -> bool:
+    """Remove malformed Databricks token cache file, if present.
+
+    Returns True if a malformed cache file was removed, else False.
+    """
+    cache_path = Path.home() / ".databricks" / "token-cache.json"
+    if not cache_path.is_file():
+        return False
+
+    try:
+        with cache_path.open() as f:
+            json.load(f)
+    except json.JSONDecodeError:
+        try:
+            cache_path.unlink()
+            return True
+        except OSError:
+            return False
+    except OSError:
+        return False
+
+    return False
 
 
 def cleanup_legacy_cache(settings_base: str) -> None:

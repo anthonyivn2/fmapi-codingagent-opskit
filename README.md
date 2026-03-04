@@ -440,6 +440,19 @@ This means the helper script that supplies OAuth tokens is failing. To diagnose:
 
 ---
 
+#### Databricks CLI error: `cache: load: parse: invalid character ...`
+
+This indicates a corrupted Databricks OAuth cache file (`~/.databricks/token-cache.json`).
+
+The setup flow now auto-recovers by removing malformed cache data. If you still see this error, delete the cache file and retry:
+
+```bash
+rm -f ~/.databricks/token-cache.json
+setup-fmapi-claudecode reauth
+```
+
+---
+
 #### Claude Code returns "authentication failed" or 401 errors
 
 Your OAuth session has likely expired. OAuth sessions expire after a period of inactivity.
