@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
+import time
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
@@ -11,8 +11,62 @@ from fmapi_opskit.auth import check_oauth_status
 from fmapi_opskit.config.models import FmapiConfig
 from fmapi_opskit.core import get_version
 from fmapi_opskit.network import build_base_url
-from fmapi_opskit.settings.hooks import get_fmapi_hook_command
 from fmapi_opskit.ui.console import get_console
+
+
+def _read_token_cache_status(cache_file: Path) -> tuple[str, str]:
+    """Return (state, detail) for helper token cache state."""
+    if not cache_file.is_file():
+        return "PENDING", "No cache yet (created on first API call)"
+
+    try:
+        lines = cache_file.read_text().strip().split("\n")
+    except OSError:
+        return "WARN", "Cannot read cache file"
+
+    now = int(time.time())
+
+    # v2 format: ts, profile, host, expiry_epoch, token
+    if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
+        age = now - int(lines[0])
+        if lines[3].isdigit() and int(lines[3]) > 0:
+            remaining = int(lines[3]) - now
+            if remaining <= 0:
+                return "STALE", f"Cached token expired ({-remaining}s ago)"
+            if remaining <= 300:
+                return "STALE", f"Cached token near expiry ({remaining}s remaining)"
+
+        if age < 240:
+            return "ACTIVE", f"Cached token (age: {age}s)"
+        return "STALE", f"Cached token stale (age: {age}s)"
+
+    # Legacy format: ts, token
+    if len(lines) >= 2 and lines[0].isdigit() and lines[1]:
+        age = now - int(lines[0])
+        if age < 240:
+            return "ACTIVE", f"Cached token (legacy format, age: {age}s)"
+        return "STALE", f"Cached token stale (legacy format, age: {age}s)"
+
+    return "WARN", "Cache file is malformed"
+
+
+def _read_token_lock_status(lock_dir: Path) -> tuple[str, str] | None:
+    """Return (state, detail) for helper lock directory, or None when absent."""
+    if not lock_dir.is_dir():
+        return None
+
+    pid_file = lock_dir / "pid"
+    if pid_file.is_file():
+        try:
+            pid_str = pid_file.read_text().strip()
+            if pid_str.isdigit():
+                pid = int(pid_str)
+                os.kill(pid, 0)
+                return "INFO", f"Token refresh lock active (PID {pid})"
+        except OSError:
+            pass
+
+    return "WARN", "Stale token lock detected"
 
 
 def display_status_dashboard(cfg: FmapiConfig, adapter: AgentAdapter) -> None:
@@ -58,37 +112,35 @@ def display_status_dashboard(cfg: FmapiConfig, adapter: AgentAdapter) -> None:
         console.print("  [dim]UNKNOWN[/dim]  Cannot check (databricks CLI not found or no profile)")
     console.print()
 
-    # Hooks
-    console.print("  [bold]Hooks[/bold]")
-    import json
+    # Token Cache
+    console.print("  [bold]Token Cache[/bold]")
+    if cfg.helper_file:
+        cache_dir = Path(cfg.helper_file).parent
+        cache_file = cache_dir / ".fmapi-token-cache"
+        lock_dir = cache_dir / ".fmapi-token-lock"
 
-    settings = {}
-    if cfg.settings_file:
-        with contextlib.suppress(json.JSONDecodeError, OSError):
-            settings = json.loads(Path(cfg.settings_file).read_text())
+        cache_state, cache_detail = _read_token_cache_status(cache_file)
+        state_tag = {
+            "ACTIVE": f"[success]{cache_state}[/success]",
+            "PENDING": f"[dim]{cache_state}[/dim]",
+            "STALE": f"[dim]{cache_state}[/dim]",
+            "WARN": f"[warning]{cache_state}[/warning]",
+        }.get(cache_state, f"[dim]{cache_state}[/dim]")
+        console.print(f"  {state_tag}   {cache_detail}")
 
-    hook_file_shown = ""
-    for hook_type in ("SubagentStart", "UserPromptSubmit"):
-        hook_cmd = get_fmapi_hook_command(settings, hook_type)
-        if hook_cmd and Path(hook_cmd).is_file() and os.access(hook_cmd, os.X_OK):
-            console.print(f"  [success]ENABLED[/success]  {hook_type} pre-check")
-            if not hook_file_shown:
-                hook_file_shown = hook_cmd
-        elif hook_cmd:
-            console.print(
-                f"  [warning]WARN[/warning]     {hook_type} hook configured but "
-                "script missing or not executable"
-            )
-        else:
-            console.print(
-                f"  [dim]DISABLED[/dim] {hook_type} pre-check  [dim](re-run setup to enable)[/dim]"
-            )
+        lock_status = _read_token_lock_status(lock_dir)
+        if lock_status is not None:
+            lock_state, lock_detail = lock_status
+            if lock_state == "INFO":
+                console.print(f"  [dim]{lock_state}[/dim]     {lock_detail}")
+            else:
+                console.print(f"  [warning]{lock_state}[/warning]     {lock_detail}")
+    else:
+        console.print("  [dim]UNKNOWN[/dim]  No helper file configured")
     console.print()
 
     # Files
     console.print("  [bold]Files[/bold]")
     console.print(f"  [dim]Settings[/dim]   {cfg.settings_file}")
     console.print(f"  [dim]Helper[/dim]     {cfg.helper_file}")
-    if hook_file_shown:
-        console.print(f"  [dim]Hook[/dim]       {hook_file_shown}")
     console.print()

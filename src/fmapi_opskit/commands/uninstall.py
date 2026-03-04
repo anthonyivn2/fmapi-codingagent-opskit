@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
+from fmapi_opskit.auth import clear_helper_token_cache
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.settings.hooks import is_fmapi_hook_entry, remove_fmapi_hooks
 from fmapi_opskit.settings.manager import SettingsManager
@@ -129,12 +131,18 @@ def do_uninstall(adapter: AgentAdapter) -> None:
         Path(hs).unlink(missing_ok=True)
         log.success(f"Deleted {hs}.")
 
-    # Clean legacy cache files
+    # Clean helper cache artifacts
     for hs in helper_scripts:
-        cache = Path(hs).parent / ".fmapi-pat-cache"
+        parent = Path(hs).parent
+
+        # Legacy PAT cache
+        cache = parent / ".fmapi-pat-cache"
         if cache.is_file():
             cache.unlink()
             log.success(f"Deleted legacy cache {cache}.")
+
+        if clear_helper_token_cache(hs):
+            log.success(f"Cleared helper token cache artifacts in {parent}.")
 
     # Clean settings files
     for sf in settings_files:
@@ -165,8 +173,6 @@ def do_uninstall(adapter: AgentAdapter) -> None:
 
     # Remove install directory
     if has_install_dir:
-        import shutil
-
         shutil.rmtree(default_install_dir, ignore_errors=True)
         log.success(f"Removed install directory {default_install_dir}.")
 

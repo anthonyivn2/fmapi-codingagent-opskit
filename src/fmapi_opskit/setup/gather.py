@@ -40,7 +40,6 @@ class GatherResult:
         self.pending_workspace_id: str = ""
         self.settings_file: str = ""
         self.helper_file: str = ""
-        self.hook_file: str = ""
         # Model defaults (for gather_config_models)
         self.default_model: str = ""
         self.default_opus: str = ""
@@ -211,7 +210,6 @@ def gather_config_pre_auth(
 
     result.settings_file = f"{settings_base}/{c.settings_dir}/{c.settings_filename}"
     result.helper_file = f"{settings_base}/{c.settings_dir}/{c.helper_filename}"
-    result.hook_file = f"{settings_base}/{c.settings_dir}/{c.hook_precheck_filename}"
 
     log.debug(f"gather: host={result.host} profile={result.profile}")
     log.debug(f"gather: settings={result.settings_file} helper={result.helper_file}")

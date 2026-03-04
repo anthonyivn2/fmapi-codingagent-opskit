@@ -290,8 +290,7 @@ class ClaudeCodeAdapter:
         console.print("  [bold]Skills[/bold]")
         c = self._config
         console.print(
-            f"  [dim]Use '{c.setup_cmd} install-skills' after setup to install "
-            f"slash commands[/dim]"
+            f"  [dim]Use '{c.setup_cmd} install-skills' after setup to install slash commands[/dim]"
         )
 
 

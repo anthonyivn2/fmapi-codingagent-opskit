@@ -22,7 +22,6 @@ def display_dry_run_plan(
     ttl_ms: str,
     settings_file: str,
     helper_file: str,
-    hook_file: str,
     ai_gateway_enabled: bool,
     pending_workspace_id: str,
     script_dir: Path,
@@ -91,17 +90,22 @@ def display_dry_run_plan(
         console.print("       [dim](exists -- would be overwritten)[/dim]")
     else:
         console.print("       [dim](would be created)[/dim]")
-
-    # Hooks
-    console.print("\n  [bold]Hooks[/bold]")
-    console.print(f"  [info]::[/info]  Auth pre-check script: [bold]{hook_file}[/bold]")
-    if Path(hook_file).is_file():
-        console.print("       [dim](exists -- would be overwritten)[/dim]")
-    else:
-        console.print("       [dim](would be created)[/dim]")
     console.print(
-        "  [info]::[/info]  Registered for: [bold]SubagentStart[/bold], "
-        "[bold]UserPromptSubmit[/bold]"
+        "  [info]::[/info]  Includes local token caching + file-based locking "
+        "for concurrent subagent safety"
     )
+
+    # Legacy hook cleanup
+    settings_dir = Path(helper_file).parent
+    has_legacy_hooks = any(
+        (settings_dir / name).is_file()
+        for name in ("fmapi-auth-precheck.sh", "fmapi-subagent-precheck.sh")
+    )
+    if has_legacy_hooks:
+        console.print("\n  [bold]Legacy hooks[/bold]")
+        console.print(
+            "  [info]::[/info]  Old auth pre-check hooks would be "
+            "[bold]removed[/bold] (no longer needed)"
+        )
 
     console.print("\n  [dim]No changes were made. Remove --dry-run to run setup.[/dim]\n")

@@ -1,12 +1,13 @@
-"""Write settings, helper script, and hook scripts."""
+"""Write settings, helper script, and clean up legacy hooks."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
+from fmapi_opskit.auth import clear_helper_token_cache
 from fmapi_opskit.network import build_base_url
-from fmapi_opskit.settings.hooks import merge_fmapi_hooks
+from fmapi_opskit.settings.hooks import remove_fmapi_hooks
 from fmapi_opskit.settings.manager import SettingsManager
 from fmapi_opskit.templates.renderer import render_template
 from fmapi_opskit.ui import logging as log
@@ -48,7 +49,6 @@ def write_settings(
 def write_helper(
     adapter: AgentAdapter,
     *,
-    script_dir: Path,
     helper_file: str,
     host: str,
     profile: str,
@@ -70,48 +70,35 @@ def write_helper(
         mode=0o700,
     )
 
+    if clear_helper_token_cache(helper_file):
+        log.debug("write_helper: cleared stale helper token cache")
+
     log.debug(f"write_helper: wrote {helper_file} (profile={profile}, host={host})")
     log.success(f"Helper script written to {helper_file}.")
 
 
-def write_hooks(
-    adapter: AgentAdapter,
+def cleanup_legacy_hooks(
     *,
-    script_dir: Path,
     settings_file: str,
-    hook_file: str,
-    host: str,
-    profile: str,
 ) -> None:
-    """Write the auth pre-check hook script and merge into settings."""
-    log.heading("Auth pre-check hooks")
+    """Remove FMAPI hook entries from settings.json and delete hook script files.
 
-    template = _TEMPLATES_DIR / "fmapi-auth-precheck.sh.template"
-
-    # Clean up legacy hook script
-    legacy_hook = Path(hook_file).parent / "fmapi-subagent-precheck.sh"
-    if legacy_hook.is_file() and str(legacy_hook) != hook_file:
-        legacy_hook.unlink()
-        log.debug(f"write_hooks: removed legacy hook script {legacy_hook}")
-
-    # Render hook script
-    render_template(
-        template,
-        Path(hook_file),
-        {
-            "PROFILE": profile,
-            "HOST": host,
-        },
-        mode=0o700,
-    )
-
-    log.debug(f"write_hooks: wrote {hook_file} (profile={profile}, host={host})")
-    log.success(f"Hook script written to {hook_file}.")
-
-    # Merge hooks into settings.json
+    Called during setup to clean up hooks from prior installations.
+    Hooks are no longer deployed — the apiKeyHelper handles all token management.
+    """
     mgr = SettingsManager(Path(settings_file))
     settings = mgr.read()
-    merge_fmapi_hooks(settings, hook_file)
+
+    # Remove FMAPI hook entries from settings.json
+    remove_fmapi_hooks(settings)
     mgr.write(settings)
 
-    log.debug(f"write_hooks: merged hooks section into {settings_file}")
+    # Delete hook script files if they exist
+    settings_dir = Path(settings_file).parent
+    for hook_name in ("fmapi-auth-precheck.sh", "fmapi-subagent-precheck.sh"):
+        hook_path = settings_dir / hook_name
+        if hook_path.is_file():
+            hook_path.unlink()
+            log.debug(f"cleanup_legacy_hooks: removed {hook_path}")
+
+    log.debug(f"cleanup_legacy_hooks: cleaned hooks from {settings_file}")

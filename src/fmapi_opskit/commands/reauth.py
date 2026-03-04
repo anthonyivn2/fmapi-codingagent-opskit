@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.auth import auth_login, check_oauth_status
+from fmapi_opskit.auth import auth_login, check_oauth_status, clear_helper_token_cache
 from fmapi_opskit.commands._common import require_fmapi_config
 from fmapi_opskit.config.discovery import discover_config
 from fmapi_opskit.core import PlatformInfo
@@ -40,6 +40,9 @@ def do_reauth(adapter: AgentAdapter, platform_info: PlatformInfo) -> None:
             f"databricks auth login --host {cfg.host} --profile {cfg.profile}"
         )
         sys.exit(1)
+
+    if clear_helper_token_cache(cfg.helper_file):
+        log.debug("reauth: cleared helper token cache after successful login")
 
     if check_oauth_status(cfg.profile):
         log.success(f"OAuth session re-established for profile '{cfg.profile}'.")
