@@ -49,24 +49,6 @@ Then run setup:
 setup-fmapi-claudecode
 ```
 
-<details>
-<summary><strong>Express One-Step Install + Setup</strong></summary>
-Use `--agent` to install and launch setup in a single command. Any additional flags are forwarded to the CLI:
-
-```bash
-# Interactive setup
-bash <(curl -sL https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/main/install.sh) \
-  --agent claude-code
-
-# Non-interactive setup
-bash <(curl -sL https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/main/install.sh) \
-  --agent claude-code --host https://my-workspace.cloud.databricks.com
-```
-
-The `--agent` flag accepts agent names like `claude-code` (hyphens are normalized automatically).
-
-</details><br>
-
 Setup walks you through the process interactively: it asks for your Databricks workspace URL, a CLI profile name, which models to use (Opus, Sonnet, Haiku), and where to write the settings file. Sensible defaults are provided for everything except the workspace URL.
 
 Once complete you can proceed to run Claude Code as per usual:
@@ -190,7 +172,7 @@ Reports per-model status: **PASS** (exists and READY), **WARN** (exists but not 
 
 #### Re-running Setup
 
-You can safely re-run setup at any time to update the workspace URL, profile, or models, or to repair a missing or corrupted settings file.
+You can safely re-run setup at any time to update the workspace URL, profile, or models, or to recover from a missing or corrupted settings file.
 
 When you re-run setup interactively with an existing configuration, it shows a summary of your current settings and asks whether to keep them or reconfigure:
 
@@ -207,16 +189,22 @@ When you re-run setup interactively with an existing configuration, it shows a s
   Settings   ...
 
   ? Keep this configuration?
-  ❯ Yes, proceed    re-run setup with existing config
+  ❯ Yes, reinstall  re-run setup with existing config
     No, reconfigure start fresh with all prompts
 ```
 
-Selecting **Yes, proceed** re-runs the full setup (dependencies, auth, settings, smoke test) without prompting for each value. Selecting **No, reconfigure** shows all prompts with your existing values as defaults. First-time users (no existing config) see the normal prompt flow.
+Selecting **Yes, reinstall** runs the reinstall path (including helper migration when needed) and then re-runs the full setup (dependencies, auth, settings, smoke test) without prompting for each value. Selecting **No, reconfigure** shows all prompts with your existing values as defaults. First-time users (no existing config) see the normal prompt flow.
 
 For a fully non-interactive re-run using your previously saved configuration:
 
 ```bash
 setup-fmapi-claudecode reinstall
+```
+
+For a lightweight local refresh that only rewrites generated helper/settings artifacts:
+
+```bash
+setup-fmapi-claudecode reinstall --refresh-only
 ```
 
 #### Uninstalling
@@ -281,7 +269,11 @@ Or if already current:
   ok Already up to date at v1.1.0.
 ```
 
-When updating an existing install that already has FMAPI configured, the installer prints a `reinstall` hint so you can quickly refresh your setup with the latest version.
+When updating an existing install that already has FMAPI configured, the installer does not run setup automatically. If needed, run refresh manually:
+
+```bash
+setup-fmapi-claudecode reinstall
+```
 
 ### Plugin Skills
 
@@ -429,9 +421,13 @@ This means the helper script that supplies OAuth tokens is failing. To diagnose:
    setup-fmapi-claudecode reauth
    ```
    Or use `/fmapi-codingagent-reauth` inside Claude Code.
-3. If the helper script is missing or not executable, re-run setup to regenerate it:
+3. If the helper script is missing or outdated, run a lightweight refresh:
    ```bash
-   setup-fmapi-claudecode reinstall
+   setup-fmapi-claudecode reinstall --refresh-only
+   ```
+   Or run full setup to regenerate and validate everything:
+   ```bash
+   setup-fmapi-claudecode
    ```
 4. If you use other Databricks tools, ensure shell-level auth overrides are not set when launching Claude Code:
    ```bash

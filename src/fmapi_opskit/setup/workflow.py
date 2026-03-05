@@ -22,7 +22,12 @@ from fmapi_opskit.setup.gather import (
 )
 from fmapi_opskit.setup.install_deps import install_dependencies
 from fmapi_opskit.setup.smoke_test import run_smoke_test
-from fmapi_opskit.setup.writer import cleanup_legacy_hooks, write_helper, write_settings
+from fmapi_opskit.setup.writer import (
+    cleanup_legacy_hooks,
+    migrate_helper_if_needed,
+    write_helper,
+    write_settings,
+)
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console, get_verbosity
 from fmapi_opskit.ui.dry_run import display_dry_run_plan
@@ -54,10 +59,17 @@ def do_setup(
     c = adapter.config
     console.print(f"\n[bold]  {c.name} x Databricks FMAPI Setup[/bold]\n")
 
-    # Fast-path: reuse existing config
+    # Fast-path: existing install can run reinstall flow
     if not non_interactive and not dry_run:
         cfg = discover_config(adapter)
         if cfg.found and cfg.host and _show_reuse_summary(adapter, cfg):
+            migrate_helper_if_needed(
+                adapter,
+                helper_file=cfg.helper_file,
+                host=cfg.host,
+                profile=cfg.profile or c.default_profile,
+                reason="setup (existing installation)",
+            )
             non_interactive = True
             cli_host = cli_host or cfg.host
             cli_profile = cli_profile or cfg.profile or c.default_profile
@@ -253,7 +265,7 @@ def _show_reuse_summary(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
     choice = select_option(
         "Keep this configuration?",
         [
-            ("Yes, proceed", "re-run setup with existing config"),
+            ("Yes, reinstall", "re-run setup with existing config"),
             ("No, reconfigure", "start fresh with all prompts"),
         ],
     )
