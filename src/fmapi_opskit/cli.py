@@ -265,7 +265,15 @@ def self_update() -> None:
 
 
 @app.command()
-def reinstall() -> None:
+def reinstall(
+    refresh_only: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-only",
+            help="Refresh local helper/settings artifacts only (skip full setup).",
+        ),
+    ] = False,
+) -> None:
     """Rerun setup using previously saved configuration."""
     adapter = _get_adapter()
     platform_info = _get_platform()
@@ -291,13 +299,20 @@ def reinstall() -> None:
         f"profile: {cfg.profile or c.default_profile})"
     )
 
-    migrate_helper_if_needed(
+    migrated = migrate_helper_if_needed(
         adapter,
         helper_file=cfg.helper_file,
         host=cfg.host,
         profile=cfg.profile or c.default_profile,
         reason="reinstall",
     )
+
+    if refresh_only:
+        if migrated:
+            log.success("Local refresh completed.")
+        else:
+            log.info("Local refresh not needed.")
+        return
 
     do_setup(
         adapter,

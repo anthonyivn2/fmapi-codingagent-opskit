@@ -52,3 +52,11 @@ def test_cli_workspace_id_non_numeric_rejected():
 def test_cli_dry_run_with_subcommand_rejected():
     result = runner.invoke(app, ["--dry-run", "status"])
     assert result.exit_code != 0, "--dry-run with subcommand should be rejected but exited 0"
+
+
+def test_reinstall_help_shows_refresh_only_flag():
+    result = runner.invoke(app, ["reinstall", "--help"])
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}: {result.output}"
+    assert "--refresh-only" in result.output, (
+        f"Expected --refresh-only in reinstall help, got: {result.output}"
+    )

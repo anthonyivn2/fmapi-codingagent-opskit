@@ -4,8 +4,6 @@ set -euo pipefail
 REPO_URL="https://github.com/anthonyivn2/fmapi-codingagent-setup.git"
 INSTALL_DIR="${FMAPI_HOME:-${HOME}/.fmapi-codingagent-setup}"
 BRANCH="main"
-AGENT=""
-SETUP_ARGS=()
 
 # ── Colors (respect NO_COLOR) ────────────────────────────────────────────────
 BOLD='\033[1m' DIM='\033[2m' GREEN='\033[32m' CYAN='\033[36m' RED='\033[31m' YELLOW='\033[33m' RESET='\033[0m'
@@ -19,16 +17,6 @@ warn()    { echo -e "  ${YELLOW}${BOLD}!!${RESET}${YELLOW} $1${RESET}"; }
 error()   { echo -e "\n  ${RED}${BOLD}!! ERROR${RESET}${RED} $1${RESET}\n" >&2; }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
-# Map agent script suffix to friendly display name
-_agent_display_name() {
-  case "$1" in
-    claudecode)  echo "Claude Code" ;;
-    codex)       echo "OpenAI Codex" ;;
-    gemini)      echo "Gemini CLI" ;;
-    *)           echo "$1" ;;
-  esac
-}
 
 # Detect existing FMAPI config in ~/.claude/settings.json
 _has_fmapi_config() {
@@ -47,28 +35,19 @@ _has_fmapi_config() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --branch) BRANCH="${2:-}"; if [[ -z "$BRANCH" ]]; then error "--branch requires a value."; exit 1; fi; shift 2 ;;
-    --agent)  AGENT="${2:-}"; if [[ -z "$AGENT" ]]; then error "--agent requires a name."; exit 1; fi; shift 2 ;;
     -h|--help)
       echo "Usage: bash <(curl -sL .../install.sh) [OPTIONS]"
       echo ""
       echo "Options:"
       echo "  --branch NAME   Git branch or tag to install (default: main)"
-      echo "  --agent NAME    Auto-run setup for the given agent after install"
-      echo "                  (e.g., claude-code). Remaining flags are forwarded."
       echo "  -h, --help      Show this help"
       echo ""
       echo "Environment variables:"
       echo "  FMAPI_HOME      Install location (default: ~/.fmapi-codingagent-setup)"
       exit 0 ;;
-    *) SETUP_ARGS+=("$1"); shift ;;
+    *) error "Unrecognized option: $1"; exit 1 ;;
   esac
 done
-
-# If extra flags were provided without --agent, error out
-if [[ ${#SETUP_ARGS[@]} -gt 0 ]] && [[ -z "$AGENT" ]]; then
-  error "Unrecognized flags: ${SETUP_ARGS[*]}. Use --agent NAME to forward flags to a setup script."
-  exit 1
-fi
 
 # ── Check Xcode CLT (macOS only, non-blocking) ─────────────────────────────
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -167,8 +146,8 @@ info "Installing setup-fmapi-claudecode CLI ..."
 UV_TOOL_BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
 export PATH="${UV_TOOL_BIN_DIR}:$PATH"
 
-uv tool install "$INSTALL_DIR" --force --quiet 2>/dev/null || \
-  uv tool install "$INSTALL_DIR" --force
+uv tool install "$INSTALL_DIR" --force --reinstall --no-cache --quiet 2>/dev/null || \
+  uv tool install "$INSTALL_DIR" --force --reinstall --no-cache
 success "CLI installed globally as setup-fmapi-claudecode."
 
 # Check if the tool bin directory is on the user's default PATH
@@ -181,15 +160,6 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$UV_TOOL_BIN_DIR" 2>/dev/null || \
   echo -e "    ${CYAN}echo 'export PATH=\"${UV_TOOL_BIN_DIR}:\$PATH\"' >> ~/.zshrc${RESET}"
   echo -e "    ${DIM}(or ~/.bashrc for bash)${RESET}"
   echo ""
-fi
-
-# ── Auto-run agent setup if --agent was provided ─────────────────────────────
-if [[ -n "$AGENT" ]]; then
-  # Normalize: claude-code → claudecode
-  agent_normalized="${AGENT//-/}"
-
-  info "Running setup for $(_agent_display_name "$agent_normalized")..."
-  exec setup-fmapi-claudecode ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}
 fi
 
 # ── Print next steps ─────────────────────────────────────────────────────────
@@ -212,7 +182,7 @@ echo -e "    ${CYAN}setup-fmapi-claudecode self-update${RESET}"
 # ── Reinstall hint (update + existing config) ─────────────────────────────────
 if [[ "$IS_UPDATE" == true ]] && _has_fmapi_config; then
   echo ""
-  echo -e "  ${BOLD}Already configured?${RESET} Update your setup with:"
+  echo -e "  ${BOLD}Already configured?${RESET} If needed, re-run refresh manually:"
   echo -e "    ${CYAN}setup-fmapi-claudecode reinstall${RESET}"
 fi
 
