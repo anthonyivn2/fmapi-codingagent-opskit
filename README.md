@@ -37,6 +37,12 @@ Install with a single command:
 bash <(curl -sL https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/main/install.sh)
 ```
 
+By default, the installer automatically installs the **latest released version**. To install a specific version:
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/main/install.sh) --version 0.1.0
+```
+
 This clones the repo to `~/.fmapi-codingagent-setup/`, installs [uv](https://docs.astral.sh/uv/) if needed, and registers the CLI globally via `uv tool install`. To install to a custom location, set `FMAPI_HOME`:
 
 ```bash
@@ -515,6 +521,23 @@ setup-fmapi-claudecode doctor --verbose
 ```
 
 The `--verbose` flag adds debug-level detail to every check. Look for any **FAIL** lines &mdash; each includes a suggested fix.
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/). While the version is `0.x`, minor releases may include breaking changes. Stability guarantees begin at `1.0.0`.
+
+- **Releases**: See the [GitHub Releases](https://github.com/anthonyivn2/fmapi-codingagent-opskit/releases) page for all releases, or [CHANGELOG.md](CHANGELOG.md) for a detailed history.
+- **Install a specific version**: Pass `--version X.Y.Z` to the installer (see [Install](#install)).
+
+### Contributing
+
+Contributions are welcome! To contribute:
+
+1. Fork the repository
+2. Create a feature branch from `main`
+3. Open a pull request against `main`
+
+All pull requests require review from the code owner before merging. See [RELEASING.md](RELEASING.md) for the release process.
 
 ## Other Agents
 

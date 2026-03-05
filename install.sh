@@ -3,7 +3,8 @@ set -euo pipefail
 
 REPO_URL="https://github.com/anthonyivn2/fmapi-codingagent-setup.git"
 INSTALL_DIR="${FMAPI_HOME:-${HOME}/.fmapi-codingagent-setup}"
-BRANCH="main"
+BRANCH=""
+USER_SET_REF=false
 
 # ── Colors (respect NO_COLOR) ────────────────────────────────────────────────
 BOLD='\033[1m' DIM='\033[2m' GREEN='\033[32m' CYAN='\033[36m' RED='\033[31m' YELLOW='\033[33m' RESET='\033[0m'
@@ -34,13 +35,26 @@ _has_fmapi_config() {
 # ── Parse flags ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --branch) BRANCH="${2:-}"; if [[ -z "$BRANCH" ]]; then error "--branch requires a value."; exit 1; fi; shift 2 ;;
+    --version)
+      if [[ -n "$BRANCH" ]]; then error "--version and --branch are mutually exclusive."; exit 1; fi
+      BRANCH="${2:-}"; if [[ -z "$BRANCH" ]]; then error "--version requires a value."; exit 1; fi
+      # Accept with or without 'v' prefix
+      [[ "$BRANCH" != v* ]] && BRANCH="v${BRANCH}"
+      USER_SET_REF=true; shift 2 ;;
+    --branch)
+      if [[ -n "$BRANCH" ]]; then error "--version and --branch are mutually exclusive."; exit 1; fi
+      BRANCH="${2:-}"; if [[ -z "$BRANCH" ]]; then error "--branch requires a value."; exit 1; fi
+      USER_SET_REF=true; shift 2 ;;
     -h|--help)
       echo "Usage: bash <(curl -sL .../install.sh) [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --branch NAME   Git branch or tag to install (default: main)"
+      echo "  --version VER   Install a specific release version (e.g., 0.1.0 or v0.1.0)"
+      echo "  --branch NAME   Install from a git branch or tag (e.g., main, v0.1.0)"
       echo "  -h, --help      Show this help"
+      echo ""
+      echo "By default, the latest release tag is installed. Falls back to main if"
+      echo "no releases exist."
       echo ""
       echo "Environment variables:"
       echo "  FMAPI_HOME      Install location (default: ~/.fmapi-codingagent-setup)"
@@ -65,6 +79,20 @@ if ! command -v git &>/dev/null; then
 fi
 
 echo -e "\n${BOLD}  FMAPI Codingagent Setup — Installer${RESET}\n"
+
+# ── Resolve version ─────────────────────────────────────────────────────────
+if [[ -z "$BRANCH" ]]; then
+  # Auto-detect latest release tag via git ls-remote
+  LATEST_TAG=$(git ls-remote --tags --sort=-v:refname "$REPO_URL" 'v*' 2>/dev/null \
+    | head -1 | sed 's/.*refs\/tags\///' | sed 's/\^{}//')
+  if [[ -n "$LATEST_TAG" ]]; then
+    BRANCH="$LATEST_TAG"
+    info "Latest release: ${BOLD}${LATEST_TAG}${RESET}"
+  else
+    BRANCH="main"
+    warn "No release tags found. Installing from main."
+  fi
+fi
 
 # ── Clone or update ──────────────────────────────────────────────────────────
 IS_UPDATE=false

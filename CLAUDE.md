@@ -71,9 +71,15 @@ tests/
   test_agent_adapter.py                            # Protocol compliance, env block, plugin paths
   test_platform.py                                 # OS/WSL/headless detection
   test_template_renderer.py                        # Placeholder substitution, permission checks
+CHANGELOG.md                                       # Release history (Keep a Changelog format)
+RELEASING.md                                       # Step-by-step release checklist
 README.md                                          # User-facing documentation
 CLAUDE.md                                          # This file
 .gitignore                                         # Ignores generated files and Python artifacts
+.github/
+  CODEOWNERS                                       # All files require review from repo owner
+  PULL_REQUEST_TEMPLATE/
+    release.md                                     # Checklist template for release PRs
 ```
 
 ## Supported Coding Agents
@@ -226,6 +232,41 @@ The test suite covers core modules with 84 tests:
 | `test_deps.py` | Xcode CLT detection, Python version detection |
 
 Run with: `uv run pytest` or `uv run pytest -v` for verbose output.
+
+## Release Process
+
+Releases are manual and tag-based. See `RELEASING.md` for the full checklist.
+
+### Quick Reference
+
+1. Create `release/vX.Y.Z` branch from `main`
+2. Bump version in **3 files** (`VERSION`, `pyproject.toml`, `.claude-plugin/plugin.json`) — all must match
+3. Update `CHANGELOG.md` — rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add new `[Unreleased]`
+4. Run quality checks: `uv run ruff check src/ tests/` + `uv run pytest`
+5. Open release PR (use the Release template), get approval, merge
+6. Tag the merge commit: `git tag -a vX.Y.Z -m "Release vX.Y.Z"` + push
+7. Create GitHub Release from tag, copy changelog entry (pre-release while `0.x`)
+8. Verify: `bash <(curl ...) --version X.Y.Z` + `setup-fmapi-claudecode --version`
+
+### Version Locations
+
+| File | Format |
+|---|---|
+| `VERSION` | Single line, no `v` prefix |
+| `pyproject.toml` | `version = "X.Y.Z"` in `[project]` |
+| `.claude-plugin/plugin.json` | `"version": "X.Y.Z"` |
+
+### Tag Format
+
+Tags use a `v` prefix: `v0.1.0`, `v0.2.0`, `v1.0.0`.
+
+### Changelog Format
+
+[Keep a Changelog](https://keepachangelog.com) with sections: Added, Changed, Deprecated, Removed, Fixed, Security.
+
+### Branch Protection
+
+`main` requires PR with 1 approval from code owner (`@anthonyivn2`). Admin bypass is enabled for the sole maintainer.
 
 ## Abbreviations
 
