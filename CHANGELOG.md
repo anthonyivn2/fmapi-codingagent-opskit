@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-03-08
+
+### Fixed
+
+- Hardened OAuth helper token cache and re-auth lifecycle behavior.
+- Added JWT-only expiry handling for OAuth token freshness checks.
+- Reduced OAuth re-auth delay in helper flow.
+- Avoided annotated Git tag checkout warnings in installer tag installs.
+
+### Changed
+
+- Simplified auth, doctor, reauth, and test helper internals.
+
+### Added
+
+- UI prompt test coverage for setup flows.
+
 ## [0.1.0] - 2025-05-01
 
 ### Added
@@ -33,5 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy PAT cleanup and migration from prior installations
 - Stale OAuth token recovery with automatic cache repair
 
-[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/releases/tag/v0.1.0
