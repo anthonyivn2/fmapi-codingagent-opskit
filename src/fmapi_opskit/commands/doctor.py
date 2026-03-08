@@ -9,6 +9,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from rich.console import Console
+
 from fmapi_opskit.agents.base import AgentAdapter
 from fmapi_opskit.auth import check_oauth_status, get_oauth_token, has_databricks_cli
 from fmapi_opskit.config.discovery import discover_config
@@ -462,7 +464,6 @@ def _doctor_token_cache(cfg: FmapiConfig) -> bool:
 
     console = get_console()
     console.print("  [bold]Token Cache[/bold]")
-    ok = True
 
     if not cfg.found or not cfg.helper_file:
         console.print("  [dim]SKIP[/dim]  No configuration found")
@@ -473,89 +474,98 @@ def _doctor_token_cache(cfg: FmapiConfig) -> bool:
     cache_file = cache_dir / ".fmapi-token-cache"
     lock_dir = cache_dir / ".fmapi-token-lock"
 
-    # Check token cache
-    if cache_file.is_file():
-        try:
-            lines = cache_file.read_text().strip().split("\n")
-            if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
-                cache_ts = int(lines[0])
-                expiry_epoch = int(lines[3]) if lines[3].isdigit() else 0
-                age = int(time.time()) - cache_ts
+    _check_token_cache_file(console, cache_file, int(time.time()))
+    _check_token_lock(console, lock_dir)
 
-                if expiry_epoch > 0:
-                    remaining = expiry_epoch - int(time.time())
-                    if remaining <= 300:
-                        console.print(
-                            "  [dim]INFO[/dim]  Token cache near expiry  "
-                            "[dim]Will be refreshed before next use[/dim]"
-                        )
+    console.print()
+    return True
 
-                if age < 240:
-                    console.print(
-                        f"  [success]PASS[/success]  Token cache is fresh  "
-                        f"[dim]Age: {age}s (max 240s)[/dim]"
-                    )
-                else:
-                    console.print(
-                        f"  [dim]INFO[/dim]  Token cache is stale  "
-                        f"[dim]Age: {age}s — will refresh on next use[/dim]"
-                    )
-            elif len(lines) >= 2 and lines[0].isdigit() and lines[1]:
-                cache_ts = int(lines[0])
-                age = int(time.time()) - cache_ts
-                if age < 240:
-                    console.print(
-                        f"  [success]PASS[/success]  Token cache is fresh (legacy format)  "
-                        f"[dim]Age: {age}s (max 240s)[/dim]"
-                    )
-                else:
-                    console.print(
-                        f"  [dim]INFO[/dim]  Token cache is stale (legacy format)  "
-                        f"[dim]Age: {age}s — will refresh on next use[/dim]"
-                    )
-            else:
-                console.print(
-                    "  [warning]WARN[/warning]  Token cache is malformed  "
-                    f"[dim]Fix: rm {cache_file}[/dim]"
-                )
-        except OSError:
-            console.print(
-                "  [warning]WARN[/warning]  Cannot read token cache  "
-                f"[dim]Fix: rm {cache_file}[/dim]"
-            )
-    else:
+
+def _check_token_cache_file(console: Console, cache_file: Path, now: int) -> None:
+    """Display token cache status for the doctor command."""
+    if not cache_file.is_file():
         console.print(
             "  [dim]INFO[/dim]  No token cache yet  [dim]Will be created on first API call[/dim]"
         )
+        return
 
-    # Check for stale lock
-    if lock_dir.is_dir():
-        pid_file = lock_dir / "pid"
-        stale = True
-        if pid_file.is_file():
-            try:
-                pid_str = pid_file.read_text().strip()
-                if pid_str.isdigit():
-                    pid = int(pid_str)
-                    try:
-                        os.kill(pid, 0)
-                        stale = False  # Process is alive — lock is active
-                        console.print(
-                            f"  [dim]INFO[/dim]  Token lock held by PID {pid}  "
-                            "[dim]Active refresh in progress[/dim]"
-                        )
-                    except OSError:
-                        pass  # Process is dead — stale lock
-            except OSError:
-                pass
+    try:
+        lines = cache_file.read_text().strip().split("\n")
+    except OSError:
+        console.print(
+            f"  [warning]WARN[/warning]  Cannot read token cache  [dim]Fix: rm {cache_file}[/dim]"
+        )
+        return
 
-        if stale:
+    # v2 format: timestamp, profile, host, expiry_epoch, token
+    if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
+        age = now - int(lines[0])
+        expiry_epoch = int(lines[3]) if lines[3].isdigit() else 0
+        if expiry_epoch > 0 and (expiry_epoch - now) <= 300:
             console.print(
-                f"  [warning]WARN[/warning]  Stale token lock detected  "
-                f"[dim]Fix: rm -rf {lock_dir}[/dim]"
+                "  [dim]INFO[/dim]  Token cache near expiry  "
+                "[dim]Will be refreshed before next use[/dim]"
             )
+        _print_cache_age(console, age, label="")
+    # Legacy format: timestamp, token
+    elif len(lines) >= 2 and lines[0].isdigit() and lines[1]:
+        age = now - int(lines[0])
+        _print_cache_age(console, age, label=" (legacy format)")
     else:
-        console.print("  [success]PASS[/success]  No stale token locks")
+        console.print(
+            f"  [warning]WARN[/warning]  Token cache is malformed  [dim]Fix: rm {cache_file}[/dim]"
+        )
 
-    console.print()
-    return ok
+
+def _print_cache_age(console: Console, age: int, *, label: str) -> None:
+    """Print cache freshness status based on age."""
+    if age < 240:
+        console.print(
+            f"  [success]PASS[/success]  Token cache is fresh{label}  "
+            f"[dim]Age: {age}s (max 240s)[/dim]"
+        )
+    else:
+        console.print(
+            f"  [dim]INFO[/dim]  Token cache is stale{label}  "
+            f"[dim]Age: {age}s — will refresh on next use[/dim]"
+        )
+
+
+def _check_token_lock(console: Console, lock_dir: Path) -> None:
+    """Display token lock status for the doctor command."""
+    if not lock_dir.is_dir():
+        console.print("  [success]PASS[/success]  No stale token locks")
+        return
+
+    if _is_lock_held_by_live_process(lock_dir, console):
+        return
+
+    console.print(
+        f"  [warning]WARN[/warning]  Stale token lock detected  [dim]Fix: rm -rf {lock_dir}[/dim]"
+    )
+
+
+def _is_lock_held_by_live_process(lock_dir: Path, console: Console) -> bool:
+    """Return True if lock is held by a running process."""
+    pid_file = lock_dir / "pid"
+    if not pid_file.is_file():
+        return False
+
+    try:
+        pid_str = pid_file.read_text().strip()
+    except OSError:
+        return False
+
+    if not pid_str.isdigit():
+        return False
+
+    pid = int(pid_str)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+
+    console.print(
+        f"  [dim]INFO[/dim]  Token lock held by PID {pid}  [dim]Active refresh in progress[/dim]"
+    )
+    return True

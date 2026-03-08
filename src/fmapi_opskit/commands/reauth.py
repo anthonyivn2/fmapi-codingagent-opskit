@@ -27,11 +27,13 @@ def do_reauth(adapter: AgentAdapter) -> None:
 
     log.info(f"Re-authenticating with Databricks (profile: {cfg.profile}) ...")
 
+    manual_hint = (
+        f"Re-authentication failed. Try manually: "
+        f"databricks auth login --host {cfg.host} --profile {cfg.profile}"
+    )
+
     if not auth_login(cfg.host, cfg.profile):
-        log.error(
-            f"Re-authentication failed. Try manually: "
-            f"databricks auth login --host {cfg.host} --profile {cfg.profile}"
-        )
+        log.error(manual_hint)
         sys.exit(1)
 
     if clear_helper_token_cache(cfg.helper_file):
@@ -40,8 +42,5 @@ def do_reauth(adapter: AgentAdapter) -> None:
     if check_oauth_status(cfg.profile):
         log.success(f"OAuth session re-established for profile '{cfg.profile}'.")
     else:
-        log.error(
-            f"Re-authentication failed. Try manually: "
-            f"databricks auth login --host {cfg.host} --profile {cfg.profile}"
-        )
+        log.error(manual_hint)
         sys.exit(1)

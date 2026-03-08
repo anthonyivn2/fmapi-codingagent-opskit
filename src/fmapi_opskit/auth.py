@@ -437,9 +437,7 @@ def _token_expires_in_seconds(token_data: dict) -> int | None:
 
     token = token_data.get("access_token")
     if isinstance(token, str) and token:
-        jwt_seconds = _jwt_expires_in_seconds(token)
-        if jwt_seconds is not None:
-            return jwt_seconds
+        return _jwt_expires_in_seconds(token)
 
     return None
 
@@ -450,25 +448,25 @@ def _jwt_expires_in_seconds(token: str) -> int | None:
     if len(parts) < 2 or not parts[1]:
         return None
 
-    payload_b64 = parts[1]
-    payload_b64 += "=" * (-len(payload_b64) % 4)
-
+    padded = parts[1] + "=" * (-len(parts[1]) % 4)
     try:
-        payload_raw = urlsafe_b64decode(payload_b64.encode("ascii"))
-        payload = json.loads(payload_raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        payload = json.loads(urlsafe_b64decode(padded))
+    except (ValueError, json.JSONDecodeError):
         return None
 
-    exp_value = payload.get("exp")
-    if exp_value is None:
+    exp = payload.get("exp")
+    if exp is None:
         return None
 
     try:
-        exp_epoch = int(float(exp_value))
+        return int(float(exp)) - int(datetime.now(timezone.utc).timestamp())
     except (TypeError, ValueError):
         return None
 
-    return exp_epoch - int(datetime.now(timezone.utc).timestamp())
+
+def _databricks_token_cache_path() -> Path:
+    """Return the path to the Databricks CLI token cache file."""
+    return Path.home() / ".databricks" / "token-cache.json"
 
 
 def repair_malformed_token_cache() -> bool:
@@ -476,7 +474,7 @@ def repair_malformed_token_cache() -> bool:
 
     Returns True if a malformed cache file was removed, else False.
     """
-    cache_path = Path.home() / ".databricks" / "token-cache.json"
+    cache_path = _databricks_token_cache_path()
     if not cache_path.is_file():
         return False
 
@@ -500,7 +498,7 @@ def clear_token_cache() -> bool:
 
     Returns True if a cache file was removed, else False.
     """
-    cache_path = Path.home() / ".databricks" / "token-cache.json"
+    cache_path = _databricks_token_cache_path()
     if not cache_path.is_file():
         return False
 
