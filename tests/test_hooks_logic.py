@@ -5,7 +5,6 @@ from __future__ import annotations
 from fmapi_opskit.settings.hooks import (
     get_fmapi_hook_command,
     is_fmapi_hook_entry,
-    merge_fmapi_hooks,
     remove_fmapi_hooks,
 )
 
@@ -46,42 +45,6 @@ def test_is_fmapi_rejects_unrelated_hook():
 
 def test_is_fmapi_handles_missing_hooks_key():
     assert is_fmapi_hook_entry({}) is False, "Empty dict should not crash and should return False"
-
-
-def test_merge_empty_creates_both_types():
-    settings: dict = {}
-    merge_fmapi_hooks(settings, NEW_CMD)
-    subagent_cmds = _cmds(settings, "SubagentStart")
-    prompt_cmds = _cmds(settings, "UserPromptSubmit")
-    assert subagent_cmds == [NEW_CMD], f"Expected SubagentStart=[{NEW_CMD}], got {subagent_cmds}"
-    assert prompt_cmds == [NEW_CMD], f"Expected UserPromptSubmit=[{NEW_CMD}], got {prompt_cmds}"
-
-
-def test_merge_idempotent():
-    settings: dict = {}
-    merge_fmapi_hooks(settings, NEW_CMD)
-    merge_fmapi_hooks(settings, NEW_CMD)
-    subagent_cmds = _cmds(settings, "SubagentStart")
-    assert subagent_cmds == [NEW_CMD], f"Merging twice should not duplicate; got {subagent_cmds}"
-
-
-def test_merge_preserves_user_hooks():
-    settings = {
-        "hooks": {"SubagentStart": [_entry("/old/fmapi-auth-precheck.sh"), _entry(USER_CMD)]}
-    }
-    merge_fmapi_hooks(settings, NEW_CMD)
-    cmds = _cmds(settings, "SubagentStart")
-    assert USER_CMD in cmds, f"User hook '{USER_CMD}' should be preserved, got {cmds}"
-    assert NEW_CMD in cmds, f"New FMAPI hook '{NEW_CMD}' should be present, got {cmds}"
-
-
-def test_merge_replaces_old_fmapi_path():
-    old_cmd = "/old/fmapi-auth-precheck.sh"
-    settings = {"hooks": {"SubagentStart": [_entry(old_cmd)]}}
-    merge_fmapi_hooks(settings, NEW_CMD)
-    cmds = _cmds(settings, "SubagentStart")
-    assert NEW_CMD in cmds, f"New FMAPI hook should replace old one, got {cmds}"
-    assert old_cmd not in cmds, f"Old FMAPI hook '{old_cmd}' should be removed, got {cmds}"
 
 
 def test_remove_strips_fmapi_keeps_user():

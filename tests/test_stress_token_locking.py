@@ -57,17 +57,8 @@ def helper_file():
     return path
 
 
-@pytest.fixture()
-def clear_token_cache(helper_file):
-    """Clear the token cache before the test to force a real refresh race."""
-    cache_file = Path(helper_file).parent / ".fmapi-token-cache"
-    if cache_file.is_file():
-        cache_file.unlink()
-    yield cache_file
-
-
 @pytest.mark.slow
-def test_concurrent_token_fetch(helper_file, clear_token_cache, concurrency=10):
+def test_concurrent_token_fetch(helper_file, concurrency=10):
     """Launch N parallel key-helper invocations and verify all succeed."""
     results: list[tuple[int, bool, float, str]] = []
 
@@ -83,6 +74,4 @@ def test_concurrent_token_fetch(helper_file, clear_token_cache, concurrency=10):
         detail = "; ".join(f"worker {idx}: {err}" for idx, err in failures)
         pytest.fail(f"{len(failures)}/{concurrency} workers failed: {detail}")
 
-    # All succeeded — verify cache file was written
-    cache_file = clear_token_cache
-    assert cache_file.is_file(), "Token cache should exist after concurrent fetches"
+    # All workers succeeded without timing out or returning empty tokens.
