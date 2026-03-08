@@ -41,3 +41,11 @@ def test_install_script_clones_without_branch_checkout_warning_for_tags():
         "install.sh should not use --branch during clone because "
         "annotated tags are not direct commits"
     )
+
+
+def test_install_script_fetches_tag_refspec_before_checkout():
+    script = _install_script_text()
+    assert 'git -C "$repo" fetch --quiet origin "refs/tags/$ref:refs/tags/$ref"' in script, (
+        "install.sh should fetch remote tags into local tag refs so updates can checkout newly "
+        "published versions"
+    )

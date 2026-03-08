@@ -23,6 +23,22 @@ _is_tag_ref() {
   git -C "$repo" show-ref --verify --quiet "refs/tags/$ref"
 }
 
+_is_remote_tag_ref() {
+  local repo="$1"
+  local ref="$2"
+  git -C "$repo" ls-remote --exit-code --tags origin "refs/tags/$ref" >/dev/null 2>&1
+}
+
+_fetch_ref() {
+  local repo="$1"
+  local ref="$2"
+  if _is_remote_tag_ref "$repo" "$ref"; then
+    git -C "$repo" fetch --quiet origin "refs/tags/$ref:refs/tags/$ref"
+  else
+    git -C "$repo" fetch --quiet origin "$ref"
+  fi
+}
+
 _checkout_ref() {
   local repo="$1"
   local ref="$2"
@@ -126,7 +142,7 @@ if [[ -d "${INSTALL_DIR}/.git" ]]; then
 
   info "Existing installation found at ${DIM}${INSTALL_DIR}${RESET}"
   info "Updating..."
-  git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH"
+  _fetch_ref "$INSTALL_DIR" "$BRANCH"
   _checkout_ref "$INSTALL_DIR" "$BRANCH"
   if ! _is_tag_ref "$INSTALL_DIR" "$BRANCH"; then
     git -C "$INSTALL_DIR" pull --quiet origin "$BRANCH"
