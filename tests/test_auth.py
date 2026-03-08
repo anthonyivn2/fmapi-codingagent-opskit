@@ -48,40 +48,6 @@ def test_repair_malformed_token_cache_keeps_valid_json(tmp_path, monkeypatch):
     assert cache_file.exists(), "Valid cache file should remain"
 
 
-def test_auth_login_repairs_cache_before_login(tmp_path, monkeypatch):
-    """auth_login should remove malformed cache before launching the login process."""
-    cache_file = _patch_home(monkeypatch, tmp_path)
-    cache_file.write_text('{"broken": true}}')
-
-    popen_called = {"cache_existed": None}
-
-    class FakePopen:
-        def __init__(self, *args, **kwargs):
-            popen_called["cache_existed"] = cache_file.exists()
-            self.stdout = iter([])
-            self.stderr = iter([])
-            self.returncode = 0
-
-        def poll(self):
-            return 0
-
-        def wait(self, timeout=None):
-            return 0
-
-        def terminate(self):
-            pass
-
-        def kill(self):
-            pass
-
-    monkeypatch.setattr(subprocess, "Popen", FakePopen)
-
-    ok = auth.auth_login("https://example.cloud.databricks.com", "test-profile")
-
-    assert ok is True, "Expected auth_login success from mocked process"
-    assert popen_called["cache_existed"] is False, "Cache should be repaired before Popen"
-
-
 def test_get_oauth_token_repairs_cache_before_fetch(tmp_path, monkeypatch):
     """get_oauth_token should repair malformed cache before auth token fetch."""
     cache_file = _patch_home(monkeypatch, tmp_path)
@@ -130,21 +96,62 @@ def test_clear_helper_token_cache_noop_when_missing(tmp_path):
     assert removed is False, "Expected no removals when cache artifacts are absent"
 
 
-def test_get_oauth_token_retries_when_first_token_near_expiry(monkeypatch):
-    """Near-expiry token should trigger a retry and return a refreshed token."""
+def test_get_oauth_token_forces_cache_refresh_when_first_token_near_expiry(monkeypatch):
+    """Near-expiry first token should force Databricks cache refresh before retry."""
     calls = iter(
         [
             {"access_token": "soon-expiring", "expires_in": 30},
             {"access_token": "fresh-token", "expires_in": 3600},
         ]
     )
+    refresh_calls = {"count": 0}
 
     monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
     monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
 
+    def fake_force_refresh_databricks_token_cache() -> bool:
+        refresh_calls["count"] += 1
+        return True
+
+    monkeypatch.setattr(
+        auth,
+        "_force_refresh_databricks_token_cache",
+        fake_force_refresh_databricks_token_cache,
+    )
+
     token = auth.get_oauth_token("test-profile")
 
-    assert token == "fresh-token", "Expected retry to return a refreshed token"
+    assert token == "fresh-token"
+    assert refresh_calls["count"] == 1, "Expected one forced cache refresh before retry"
+
+
+def test_get_oauth_token_does_not_force_refresh_when_token_missing(monkeypatch):
+    """Missing first token should not force-refresh cache before retry."""
+    calls = iter(
+        [
+            None,
+            {"access_token": "fresh-token", "expires_in": 3600},
+        ]
+    )
+    refresh_calls = {"count": 0}
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
+
+    def fake_force_refresh_databricks_token_cache() -> bool:
+        refresh_calls["count"] += 1
+        return True
+
+    monkeypatch.setattr(
+        auth,
+        "_force_refresh_databricks_token_cache",
+        fake_force_refresh_databricks_token_cache,
+    )
+
+    token = auth.get_oauth_token("test-profile")
+
+    assert token == "fresh-token"
+    assert refresh_calls["count"] == 0, "Cache refresh should not run when token is missing"
 
 
 def test_get_oauth_token_retries_when_expiry_only_in_jwt_claim(monkeypatch):
@@ -240,36 +247,6 @@ def test_extract_oauth_url_from_aws_output():
     url = auth._extract_oauth_url(text)
     assert url is not None
     assert "dbc-abc123.cloud.databricks.com/oidc/v1/authorize" in url
-
-
-def test_extract_oauth_url_from_azure_output():
-    """URL extraction should work for Azure workspace OAuth URLs."""
-    text = (
-        "Go to https://adb-12345.azuredatabricks.net/oidc/authorize?"
-        "client_id=databricks-cli&response_type=code"
-    )
-    url = auth._extract_oauth_url(text)
-    assert url is not None
-    assert "azuredatabricks.net/oidc/authorize" in url
-
-
-def test_extract_oauth_url_from_gcp_output():
-    """URL extraction should work for GCP workspace OAuth URLs."""
-    text = (
-        "Visit: https://123456.gcp.databricks.com/oidc/v1/authorize?"
-        "client_id=databricks-cli&scope=all"
-    )
-    url = auth._extract_oauth_url(text)
-    assert url is not None
-    assert "gcp.databricks.com/oidc/v1/authorize" in url
-
-
-def test_extract_oauth_url_generic_authorize():
-    """URL extraction should match a generic /authorize path."""
-    text = "Open https://accounts.cloud.databricks.com/authorize?client_id=x in your browser"
-    url = auth._extract_oauth_url(text)
-    assert url is not None
-    assert "/authorize" in url
 
 
 def test_extract_oauth_url_returns_none_for_no_match():

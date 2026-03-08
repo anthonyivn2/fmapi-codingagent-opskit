@@ -39,7 +39,7 @@ src/fmapi_opskit/
   setup/
     gather.py                                      # gather_config_pre_auth, gather_config_models
     install_deps.py                                # Platform-specific dependency installation
-    writer.py                                      # write_settings, write_helper, write_hooks
+    writer.py                                      # write_settings, write_helper, helper migration/cleanup
     smoke_test.py                                  # Post-setup verification
     workflow.py                                    # do_setup orchestrator + print_summary
   ui/
@@ -51,9 +51,6 @@ src/fmapi_opskit/
     dry_run.py                                     # Dry-run plan display
   templates/
     renderer.py                                    # str.replace for __PLACEHOLDER__ tokens, atomic write + chmod
-templates/
-  fmapi-key-helper.sh.template                     # POSIX helper script template
-  fmapi-auth-precheck.sh.template                  # POSIX auth pre-check hook template
 example-config.json                                # Example config file for --config / --config-url
 .claude-plugin/plugin.json                         # Claude Code plugin manifest
 skills/fmapi-codingagent-status/SKILL.md           # /fmapi-codingagent-status skill
@@ -187,7 +184,7 @@ setup-fmapi-claudecode reinstall                         # rerun with saved conf
 ## Development Guidelines
 
 - This is a **Python** project using **Typer** + **Rich**. Use `uv` for dependency management.
-- The helper script (`fmapi-key-helper.sh`) and auth pre-check script must remain POSIX `/bin/sh` compatible. Do not use bash-specific features in templates.
+- Generated shell scripts (especially `fmapi-key-helper.sh`) must remain POSIX `/bin/sh` compatible. Do not use bash-specific features in templates.
 - All generated files must have owner-only permissions (`0o600` for settings, `0o700` for scripts).
 - **Never commit** `.claude/settings.json`, `fmapi-key-helper.sh`, or other files containing tokens.
 - Use type hints for all function parameters and return values.

@@ -5,30 +5,21 @@ FMAPI_PROFILE="__PROFILE__"
 FMAPI_HOST="__HOST__"
 
 # Verify required commands exist
-if ! command -v databricks >/dev/null 2>&1; then
-  echo "FMAPI: databricks CLI not found. Install it and ensure it is on your PATH." >&2
-  exit 1
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "FMAPI: jq not found. Install it and ensure it is on your PATH." >&2
-  exit 1
-fi
+for _cmd in databricks jq; do
+  if ! command -v "$_cmd" >/dev/null 2>&1; then
+    echo "FMAPI: $_cmd not found. Install it and ensure it is on your PATH." >&2
+    exit 1
+  fi
+done
 
-# ---------------------------------------------------------------------------
-# Token cache + lock paths
-# ---------------------------------------------------------------------------
-_FMAPI_CACHE_DIR="${HOME}/.claude"
-_FMAPI_TOKEN_CACHE="${_FMAPI_CACHE_DIR}/.fmapi-token-cache"
-_FMAPI_TOKEN_LOCK="${_FMAPI_CACHE_DIR}/.fmapi-token-lock"
-_EXPIRY_BUFFER_SECONDS=300  # seconds — force refresh when token expires within this window
+_EXPIRY_BUFFER_SECONDS=300
 _REAUTH_TIMEOUT_SECONDS=180
 _REAUTH_POLL_INTERVAL_SECONDS=1
-_fmapi_last_expires_in=""
-_fmapi_last_token=""
+_DBX_CACHE_LOCK_WAIT_SECONDS=10
+_DBX_TOKEN_CACHE="$HOME/.databricks/token-cache.json"
+_DBX_CACHE_LOCK="$HOME/.databricks/.fmapi-token-cache-expire-lock"
 
-# ---------------------------------------------------------------------------
 # Run Databricks CLI without env-based auth overrides (profile-based OAuth only)
-# ---------------------------------------------------------------------------
 _dbx() {
   env \
     -u DATABRICKS_TOKEN \
@@ -39,45 +30,43 @@ _dbx() {
     databricks "$@"
 }
 
-# ---------------------------------------------------------------------------
-# Core token fetch via Databricks CLI
-# ---------------------------------------------------------------------------
-_fetch_token_json() {
-  _dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true
+_get_access_token() {
+  printf '%s' "$1" | jq -r '.access_token // empty' 2>/dev/null || true
 }
 
-_get_expires_in_seconds() {
+# Extract the 'exp' claim (epoch seconds) from a JWT access token embedded
+# in the CLI response. Uses jq for base64url decoding for portability.
+_get_jwt_exp() {
   printf '%s' "$1" | jq -r '
-    (
-      .expires_in // .expiresIn //
-      (
-        (.expiry // .expires_at // .expiresAt // empty)
-        | (fromdateiso8601? - now)
-      ) //
-      (
-        try (
-          (.access_token // empty)
-          | split(".")[1]? // empty
-          | gsub("-"; "+")
-          | gsub("_"; "/")
-          | . + (
-              if (length % 4) == 2 then "=="
-              elif (length % 4) == 3 then "="
-              elif (length % 4) == 0 then ""
-              else ""
-              end
-            )
-          | @base64d
-          | fromjson?
-          | .exp // empty
-          | tonumber?
-          | (. - now)
-        ) catch empty
+    .access_token // empty
+    | split(".")[1]? // empty
+    | gsub("-"; "+") | gsub("_"; "/")
+    | . + (
+        if (length % 4) == 2 then "=="
+        elif (length % 4) == 3 then "="
+        else "" end
       )
-    )
-    | tonumber?
-    | if . == null then empty else floor end
+    | @base64d | fromjson? | .exp // empty | tonumber?
   ' 2>/dev/null || true
+}
+
+# Get seconds remaining until a token expires.
+# Tries the CLI-provided expires_in field first, then JWT exp fallback.
+_get_token_time_left() {
+  _ttl_json="$1"
+
+  _ttl_ei=$(printf '%s' "$_ttl_json" | jq -r '.expires_in // .expiresIn // empty' 2>/dev/null) || true
+  if [ -n "$_ttl_ei" ]; then
+    printf '%s' "$_ttl_ei"
+    return 0
+  fi
+
+  _ttl_exp=$(_get_jwt_exp "$_ttl_json")
+  if [ -n "$_ttl_exp" ]; then
+    _ttl_now=$(date +%s)
+    printf '%s' "$(( _ttl_exp - _ttl_now ))"
+    return 0
+  fi
 }
 
 _is_expiring_soon() {
@@ -90,291 +79,136 @@ _is_expiring_soon() {
 }
 
 _clear_databricks_token_cache() {
-  _cache_file="$HOME/.databricks/token-cache.json"
-  if [ -f "$_cache_file" ]; then
-    rm -f "$_cache_file" >/dev/null 2>&1 || true
-  fi
+  rm -f "$_DBX_TOKEN_CACHE" 2>/dev/null || true
 }
 
-_fetch_token() {
-  _fmapi_last_expires_in=""
-  _fmapi_last_token=""
-  _token_json=$(_fetch_token_json)
-  _token=$(printf '%s' "$_token_json" | jq -r '.access_token // empty')
-  _fmapi_last_expires_in=$(_get_expires_in_seconds "$_token_json")
+_acquire_dbx_cache_lock() {
+  mkdir -p "$HOME/.databricks" 2>/dev/null || true
 
-  if [ -n "$_token" ] && _is_expiring_soon "$_fmapi_last_expires_in"; then
-    _clear_databricks_token_cache
-    _token_json=$(_fetch_token_json)
-    _new_token=$(printf '%s' "$_token_json" | jq -r '.access_token // empty')
-    _fmapi_last_expires_in=$(_get_expires_in_seconds "$_token_json")
-    if [ -n "$_new_token" ]; then
-      _token="$_new_token"
-    fi
-  fi
-
-  _fmapi_last_token="$_token"
-}
-
-# ---------------------------------------------------------------------------
-# Local token cache — avoids N concurrent `databricks auth token` calls
-# Cache format (v2):
-# line 1 = epoch timestamp
-# line 2 = profile
-# line 3 = host
-# line 4 = access-token-expiry epoch (optional; 0 when unknown)
-# line 5 = access token
-# ---------------------------------------------------------------------------
-_read_token_cache() {
-  [ -f "$_FMAPI_TOKEN_CACHE" ] || return 0
-  _cached_ts=""
-  _cached_profile=""
-  _cached_host=""
-  _cached_expiry_epoch=""
-  _cached_token=""
-  {
-    read -r _cached_ts
-    read -r _cached_profile
-    read -r _cached_host
-    read -r _cached_expiry_epoch
-    read -r _cached_token
-  } < "$_FMAPI_TOKEN_CACHE" 2>/dev/null || return 0
-
-  [ "$FMAPI_PROFILE" = "$_cached_profile" ] || return 0
-  [ "$FMAPI_HOST" = "$_cached_host" ] || return 0
-
-  # Validate: timestamp must be numeric, token must be non-empty
-  case "$_cached_ts" in
-    ''|*[!0-9]*) return 0 ;;
-  esac
-  case "$_cached_expiry_epoch" in
-    ''|*[!0-9]*) return 0 ;;
-  esac
-  [ -z "$_cached_token" ] && return 0
-
-  if [ "$_cached_expiry_epoch" -gt 0 ]; then
-    _now=$(date +%s)
-    if [ $(( _cached_expiry_epoch - _now )) -le "$_EXPIRY_BUFFER_SECONDS" ]; then
+  _waited=0
+  while [ "$_waited" -lt "$_DBX_CACHE_LOCK_WAIT_SECONDS" ]; do
+    if mkdir "$_DBX_CACHE_LOCK" 2>/dev/null; then
       return 0
     fi
-  fi
-  printf '%s' "$_cached_token"
-}
-
-_write_token_cache() {
-  _wt_token="$1"
-  _wt_expires_in="$2"
-  [ -z "$_wt_token" ] && return 1
-  _wt_ts=$(date +%s)
-  _wt_expiry_epoch=0
-  case "$_wt_expires_in" in
-    *[!0-9-]*) _wt_expires_in="" ;;
-  esac
-  if [ -n "$_wt_expires_in" ] && [ "$_wt_expires_in" -gt 0 ] 2>/dev/null; then
-    _wt_expiry_epoch=$(( _wt_ts + _wt_expires_in ))
-  fi
-  _wt_tmp="${_FMAPI_TOKEN_CACHE}.$$"
-  mkdir -p "$_FMAPI_CACHE_DIR" 2>/dev/null || true
-  printf '%s\n%s\n%s\n%s\n%s\n' \
-    "$_wt_ts" \
-    "$FMAPI_PROFILE" \
-    "$FMAPI_HOST" \
-    "$_wt_expiry_epoch" \
-    "$_wt_token" > "$_wt_tmp" 2>/dev/null || { rm -f "$_wt_tmp"; return 1; }
-  chmod 600 "$_wt_tmp" 2>/dev/null || true
-  mv -f "$_wt_tmp" "$_FMAPI_TOKEN_CACHE" 2>/dev/null || { rm -f "$_wt_tmp"; return 1; }
-}
-
-# ---------------------------------------------------------------------------
-# File-based lock using mkdir (atomic on POSIX)
-# ---------------------------------------------------------------------------
-_acquire_lock() {
-  _al_waited=0
-  while [ "$_al_waited" -lt 10 ]; do
-    if mkdir "$_FMAPI_TOKEN_LOCK" 2>/dev/null; then
-      echo $$ > "${_FMAPI_TOKEN_LOCK}/pid" 2>/dev/null || true
-      return 0
-    fi
-
-    # Check for stale lock — holder process may have crashed
-    if [ -f "${_FMAPI_TOKEN_LOCK}/pid" ]; then
-      _al_pid=""
-      read -r _al_pid < "${_FMAPI_TOKEN_LOCK}/pid" 2>/dev/null || true
-      if [ -n "$_al_pid" ] && ! kill -0 "$_al_pid" 2>/dev/null; then
-        # Lock holder is dead — break the lock
-        rm -rf "$_FMAPI_TOKEN_LOCK" 2>/dev/null || true
-        continue
-      fi
-    else
-      # No PID file — lock may be stale; break after 5s of waiting
-      if [ "$_al_waited" -ge 5 ]; then
-        rm -rf "$_FMAPI_TOKEN_LOCK" 2>/dev/null || true
-        continue
-      fi
-    fi
-
     sleep 1
-    _al_waited=$(( _al_waited + 1 ))
+    _waited=$(( _waited + 1 ))
   done
 
-  # Timeout — force-break as safety valve
-  rm -rf "$_FMAPI_TOKEN_LOCK" 2>/dev/null || true
-  if mkdir "$_FMAPI_TOKEN_LOCK" 2>/dev/null; then
-    echo $$ > "${_FMAPI_TOKEN_LOCK}/pid" 2>/dev/null || true
+  return 1
+}
+
+_release_dbx_cache_lock() {
+  rm -rf "$_DBX_CACHE_LOCK" 2>/dev/null || true
+}
+
+_expire_databricks_token_cache_unlocked() {
+  [ -f "$_DBX_TOKEN_CACHE" ] || return 0
+
+  _past=$(date -u -d "1 hour ago" +"%Y-%m-%dT%H:%M:%S.000000000Z" 2>/dev/null \
+       || date -u -v-1H +"%Y-%m-%dT%H:%M:%S.000000000Z" 2>/dev/null \
+       || echo "2000-01-01T00:00:00.000000000Z")
+
+  _updated=$(jq --arg past "$_past" '
+    if .Tokens then .Tokens |= map_values(.expiry = $past)
+    elif .tokens then .tokens |= map_values(.expiry = $past)
+    else . end
+  ' "$_DBX_TOKEN_CACHE" 2>/dev/null) || {
+    _clear_databricks_token_cache
     return 0
-  fi
-  return 1
+  }
+
+  [ -n "$_updated" ] || {
+    _clear_databricks_token_cache
+    return 0
+  }
+
+  _tmp="${_DBX_TOKEN_CACHE}.$$"
+  printf '%s\n' "$_updated" > "$_tmp" 2>/dev/null || {
+    rm -f "$_tmp" 2>/dev/null || true
+    _clear_databricks_token_cache
+    return 0
+  }
+  chmod 600 "$_tmp" 2>/dev/null || true
+  mv -f "$_tmp" "$_DBX_TOKEN_CACHE" 2>/dev/null || {
+    rm -f "$_tmp" 2>/dev/null || true
+    _clear_databricks_token_cache
+    return 0
+  }
 }
 
-_release_lock() {
-  rm -rf "$_FMAPI_TOKEN_LOCK" 2>/dev/null || true
-}
-
-# Release lock on unexpected exit (only if we own it)
-_fmapi_cleanup() {
-  if [ -d "$_FMAPI_TOKEN_LOCK" ] && [ -f "${_FMAPI_TOKEN_LOCK}/pid" ]; then
-    _cl_pid=""
-    read -r _cl_pid < "${_FMAPI_TOKEN_LOCK}/pid" 2>/dev/null || true
-    if [ "$_cl_pid" = "$$" ]; then
-      rm -rf "$_FMAPI_TOKEN_LOCK" 2>/dev/null || true
-    fi
+_force_refresh_databricks_token_cache() {
+  if _acquire_dbx_cache_lock; then
+    _expire_databricks_token_cache_unlocked
+    _release_dbx_cache_lock
   fi
-}
-trap _fmapi_cleanup EXIT INT TERM
-
-# ---------------------------------------------------------------------------
-# Main token acquisition: cache → lock → recheck → fetch → cache → release
-# ---------------------------------------------------------------------------
-
-# Fast path: return cached token if fresh (no lock, ~0ms)
-token=$(_read_token_cache) || true
-if [ -n "$token" ]; then
-  echo "$token"
-  exit 0
-fi
-
-# Slow path: acquire lock, then fetch
-if _acquire_lock; then
-  # Double-check: another process may have refreshed while we waited
-  token=$(_read_token_cache) || true
-  if [ -n "$token" ]; then
-    _release_lock
-    echo "$token"
-    exit 0
-  fi
-
-  # Fetch token via Databricks CLI
-  _fetch_token || true
-  token="$_fmapi_last_token"
-  if [ -z "$token" ]; then
-    # Retry once immediately to cover transient refresh races
-    _fetch_token || true
-    token="$_fmapi_last_token"
-  fi
-
-  if [ -n "$token" ]; then
-    _write_token_cache "$token" "$_fmapi_last_expires_in"
-    _release_lock
-    echo "$token"
-    exit 0
-  fi
-
-  _release_lock
-else
-  # Could not acquire lock — try direct fetch as fallback
-  _fetch_token || true
-  token="$_fmapi_last_token"
-  if [ -n "$token" ]; then
-    echo "$token"
-    exit 0
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# Fallback: browser-based re-authentication
-# ---------------------------------------------------------------------------
-
-# Detect headless environments (SSH without display forwarding)
-_is_headless() {
-  # WSL can open a browser via Windows interop
-  [ -n "${WSL_DISTRO_NAME:-}" ] && return 1
-  [ -f /proc/version ] && grep -qi 'microsoft' /proc/version 2>/dev/null && return 1
-
-  _has_display=false
-  [ -n "${DISPLAY:-}" ] && _has_display=true
-  [ -n "${WAYLAND_DISPLAY:-}" ] && _has_display=true
-
-  [ -n "${SSH_CONNECTION:-}" ] && [ "$_has_display" != true ] && return 0
-  [ -n "${SSH_TTY:-}" ] && [ "$_has_display" != true ] && return 0
-  return 1
-}
-
-if _is_headless; then
-  _FMAPI_HEADLESS_REAUTH=true
-else
-  _FMAPI_HEADLESS_REAUTH=false
-fi
-
-_start_databricks_login() {
-  _login_browser="$1"
-
-  if [ -n "$_login_browser" ]; then
-    env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET BROWSER="$_login_browser" databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2 &
-  else
-    env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2 &
-  fi
-
-  _FMAPI_LOGIN_PID=$!
   return 0
 }
 
-_stop_login_process() {
-  _login_pid="$1"
+_fetch_token() {
+  _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
+  _token=$(_get_access_token "$_token_json")
+  [ -n "$_token" ] || return 1
 
-  if ! kill -0 "$_login_pid" 2>/dev/null; then
-    wait "$_login_pid" 2>/dev/null || true
+  _expires_in=$(_get_token_time_left "$_token_json")
+  if _is_expiring_soon "$_expires_in"; then
+    _force_refresh_databricks_token_cache
+
+    _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
+    _token=$(_get_access_token "$_token_json")
+    [ -n "$_token" ] || return 1
+
+    _expires_in=$(_get_token_time_left "$_token_json")
+    _is_expiring_soon "$_expires_in" && return 1
+  fi
+
+  printf '%s' "$_token"
+}
+
+_stop_login_process() {
+  _pid="$1"
+  if ! kill -0 "$_pid" 2>/dev/null; then
+    wait "$_pid" 2>/dev/null || true
     return 0
   fi
 
-  if command -v pkill >/dev/null 2>&1; then
-    pkill -TERM -P "$_login_pid" 2>/dev/null || true
-  fi
-  kill "$_login_pid" 2>/dev/null || true
+  kill "$_pid" 2>/dev/null || true
   sleep 1
-  if kill -0 "$_login_pid" 2>/dev/null; then
-    if command -v pkill >/dev/null 2>&1; then
-      pkill -KILL -P "$_login_pid" 2>/dev/null || true
-    fi
-    kill -9 "$_login_pid" 2>/dev/null || true
+  if kill -0 "$_pid" 2>/dev/null; then
+    kill -9 "$_pid" 2>/dev/null || true
   fi
-  wait "$_login_pid" 2>/dev/null || true
+  wait "$_pid" 2>/dev/null || true
 }
 
-_wait_for_token_during_login() {
-  _login_pid="$1"
-  _start_epoch=$(date +%s)
+_auto_reauth_and_emit_token() {
+  echo "FMAPI: OAuth session expired. Attempting automatic re-authentication ..." >&2
 
+  env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE \
+    -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET \
+    BROWSER="none" \
+    databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2 &
+  _login_pid=$!
+
+  _start_epoch=$(date +%s)
   while :; do
-    _fetch_token || true
-    token="$_fmapi_last_token"
+    token=$(_fetch_token || true)
     if [ -n "$token" ]; then
       _stop_login_process "$_login_pid"
+      echo "$token"
       return 0
     fi
 
     if ! kill -0 "$_login_pid" 2>/dev/null; then
       wait "$_login_pid" 2>/dev/null || true
-      _fetch_token || true
-      token="$_fmapi_last_token"
-      [ -n "$token" ] && return 0
+      token=$(_fetch_token || true)
+      if [ -n "$token" ]; then
+        echo "$token"
+        return 0
+      fi
       return 1
     fi
 
     _now_epoch=$(date +%s)
-    if [ $(( _now_epoch - _start_epoch )) -ge "$_REAUTH_TIMEOUT_SECONDS" ]; then
-      break
-    fi
-
+    [ $(( _now_epoch - _start_epoch )) -ge "$_REAUTH_TIMEOUT_SECONDS" ] && break
     sleep "$_REAUTH_POLL_INTERVAL_SECONDS"
   done
 
@@ -382,48 +216,27 @@ _wait_for_token_during_login() {
   return 1
 }
 
-_reauth_and_emit_token() {
-  _login_browser=""
-  if [ "$_FMAPI_HEADLESS_REAUTH" = true ]; then
-    echo "FMAPI: OAuth session expired in headless SSH." >&2
-    echo "FMAPI: Open the Databricks login URL below in a local browser and keep this terminal running ..." >&2
-    _login_browser="none"
-  else
-    echo "FMAPI: OAuth session expired. Attempting browser re-authentication ..." >&2
-  fi
-
-  if _start_databricks_login "$_login_browser"; then
-    if _wait_for_token_during_login "$_FMAPI_LOGIN_PID"; then
-      token="$_fmapi_last_token"
-    else
-      token=""
-    fi
-    if [ -n "$token" ]; then
-      _write_token_cache "$token" "$_fmapi_last_expires_in"
-      echo "$token"
-      return 0
-    fi
-  fi
-
-  return 1
-}
-
-# First browser reauth attempt
-if _reauth_and_emit_token; then
+# 1) Fast path: fetch token (with silent refresh if near expiry)
+token=$(_fetch_token || true)
+if [ -n "$token" ]; then
+  echo "$token"
   exit 0
 fi
 
-# Stale-stale recovery: clear Databricks token cache and retry once
+# 2) Auto re-auth fallback (all environments)
+if _auto_reauth_and_emit_token; then
+  exit 0
+fi
+
+# 3) Last cache recovery attempt, then manual guidance
 _clear_databricks_token_cache
-if _reauth_and_emit_token; then
+token=$(_fetch_token || true)
+if [ -n "$token" ]; then
+  echo "$token"
   exit 0
 fi
 
-if [ "$_FMAPI_HEADLESS_REAUTH" = true ]; then
-  echo "FMAPI: OAuth session expired. Re-auth manually from this SSH session:" >&2
-  echo "FMAPI:   BROWSER=none databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
-else
-  echo "FMAPI: OAuth session expired. Run: databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
-fi
+echo "FMAPI: OAuth session expired. Re-authenticate manually:" >&2
+echo "FMAPI:   BROWSER=none databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
 echo "FMAPI: In Claude Code, run /fmapi-codingagent-reauth" >&2
 exit 1

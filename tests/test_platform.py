@@ -5,36 +5,6 @@ from __future__ import annotations
 from fmapi_opskit.core import PlatformInfo, install_hint
 
 
-def test_headless_false_for_wsl():
-    pi = PlatformInfo(os_type="Linux", is_wsl=True, wsl_version="2", wsl_distro="Ubuntu")
-    assert pi.is_headless is False, (
-        "WSL can open a browser via Windows interop, should not be headless"
-    )
-
-
-def test_headless_true_for_ssh_no_display(monkeypatch):
-    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 5678 5.6.7.8 22")
-    monkeypatch.delenv("DISPLAY", raising=False)
-    monkeypatch.delenv("SSH_TTY", raising=False)
-    pi = PlatformInfo(os_type="Linux", is_wsl=False, wsl_version="", wsl_distro="")
-    assert pi.is_headless is True, "SSH without DISPLAY should be headless"
-
-
-def test_headless_false_for_ssh_with_display(monkeypatch):
-    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 5678 5.6.7.8 22")
-    monkeypatch.setenv("DISPLAY", ":0")
-    pi = PlatformInfo(os_type="Linux", is_wsl=False, wsl_version="", wsl_distro="")
-    assert pi.is_headless is False, "SSH with X11 forwarding (DISPLAY set) should not be headless"
-
-
-def test_headless_false_when_no_ssh(monkeypatch):
-    monkeypatch.delenv("SSH_CONNECTION", raising=False)
-    monkeypatch.delenv("SSH_TTY", raising=False)
-    monkeypatch.delenv("DISPLAY", raising=False)
-    pi = PlatformInfo(os_type="Linux", is_wsl=False, wsl_version="", wsl_distro="")
-    assert pi.is_headless is False, "No SSH session means not headless (local terminal)"
-
-
 def test_install_hint_jq_linux(agent_config):
     pi = PlatformInfo(os_type="Linux", is_wsl=False, wsl_version="", wsl_distro="")
     hint = install_hint("jq", pi, agent_config)

@@ -10,9 +10,10 @@ import subprocess
 import sys
 import threading
 import time
+import contextlib
 from base64 import urlsafe_b64decode
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -23,6 +24,7 @@ _OAUTH_URL_PATTERN = re.compile(r"(https://\S+(?:/oidc/(?:v1/)?authorize|/author
 _URL_READ_TIMEOUT = 30  # seconds to wait for URL in CLI output
 _POLL_TIMEOUT = 300  # seconds to poll for token (5 min)
 _POLL_INTERVAL = 3  # seconds between poll attempts
+_TOKEN_MIN_VALIDITY_SECONDS = 300
 
 # ---------------------------------------------------------------------------
 # Databricks CLI subprocess wrappers
@@ -292,13 +294,17 @@ def get_oauth_token(profile: str) -> str:
     repair_malformed_token_cache()
 
     data = run_databricks_json("auth", "token", profile=profile)
-    if isinstance(data, dict) and _is_token_fresh(data):
-        return data.get("access_token", "")
+    token = _fresh_access_token(data)
+    if token:
+        return token
 
-    # One retry allows Databricks CLI to auto-refresh a near-expiry token.
+    if isinstance(data, dict) and data.get("access_token"):
+        _force_refresh_databricks_token_cache()
+
     data = run_databricks_json("auth", "token", profile=profile)
-    if isinstance(data, dict) and _is_token_fresh(data):
-        return data.get("access_token", "")
+    token = _fresh_access_token(data)
+    if token:
+        return token
 
     return ""
 
@@ -389,20 +395,20 @@ def _cleanup_legacy_pats(profile: str) -> None:
         log.success("Legacy PATs revoked.")
 
 
-def _is_token_fresh(token_data: dict, *, min_validity_seconds: int = 300) -> bool:
-    """Return True when token exists and is not near expiry.
+def _fresh_access_token(token_data: dict | list | None) -> str:
+    """Return a fresh access token string, or empty string when unavailable."""
+    if not isinstance(token_data, dict):
+        return ""
 
-    If token expiry metadata is unavailable, treat token as fresh.
-    """
-    token = token_data.get("access_token", "")
-    if not token:
-        return False
+    token = token_data.get("access_token")
+    if not isinstance(token, str) or not token:
+        return ""
 
     expires_in = _token_expires_in_seconds(token_data)
     if expires_in is None:
-        return True
+        return token
 
-    return expires_in > min_validity_seconds
+    return token if expires_in > _TOKEN_MIN_VALIDITY_SECONDS else ""
 
 
 def _token_expires_in_seconds(token_data: dict) -> int | None:
@@ -469,6 +475,50 @@ def _databricks_token_cache_path() -> Path:
     return Path.home() / ".databricks" / "token-cache.json"
 
 
+def _force_refresh_databricks_token_cache() -> bool:
+    """Backdate token-cache expiry fields to force Databricks CLI refresh."""
+    cache_path = _databricks_token_cache_path()
+    if not cache_path.is_file():
+        return False
+
+    try:
+        payload = json.loads(cache_path.read_text())
+    except json.JSONDecodeError:
+        return clear_token_cache()
+    except OSError:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000000000Z")
+    updated = False
+    for key in ("Tokens", "tokens"):
+        entries = payload.get(key)
+        if not isinstance(entries, dict):
+            continue
+        for entry in entries.values():
+            if isinstance(entry, dict):
+                entry["expiry"] = past
+                updated = True
+
+    if not updated:
+        return False
+
+    tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload))
+        tmp_path.chmod(0o600)
+        tmp_path.replace(cache_path)
+        return True
+    except OSError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+
 def repair_malformed_token_cache() -> bool:
     """Remove malformed Databricks token cache file, if present.
 
@@ -520,9 +570,12 @@ def cleanup_legacy_cache(settings_base: str) -> None:
 
 
 def clear_helper_token_cache(helper_file: str) -> bool:
-    """Clear local helper token cache/lock files to force fresh token retrieval.
+    """Clear legacy helper-local token cache/lock artifacts.
 
-    Returns True if at least one cache artifact was removed.
+    Current helpers use Databricks token-cache.json directly; these files are
+    removed only for backward compatibility cleanup.
+
+    Returns True if at least one legacy artifact was removed.
     """
     if not helper_file:
         return False

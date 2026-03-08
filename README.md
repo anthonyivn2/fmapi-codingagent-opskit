@@ -389,7 +389,9 @@ Global options:
 
 ### How It Works
 
-FMAPI keeps Claude Code authenticated with Databricks automatically. By default, Claude checks for a fresh token every 55 minutes (configurable with `--ttl`, up to 60 minutes). If your login session has expired, run `setup-fmapi-claudecode reauth` (or `/fmapi-codingagent-reauth` inside Claude Code) and continue.
+FMAPI keeps Claude Code authenticated with Databricks automatically via `apiKeyHelper` (`fmapi-key-helper.sh`). The helper first fetches a token, silently refreshes near-expiry tokens by expiring the Databricks CLI cache entry in-place, then retries once. If no valid token is available, it attempts non-interactive auto re-auth (`BROWSER=none`) and polls briefly before falling back to manual re-auth instructions.
+
+By default, Claude checks for a fresh token every 55 minutes (configurable with `--ttl`, up to 60 minutes). If your login session is still expired after helper auto-recovery, run `setup-fmapi-claudecode reauth` (or `/fmapi-codingagent-reauth` inside Claude Code) and continue.
 
 ### Troubleshooting
 
@@ -414,7 +416,7 @@ Do not include a trailing slash or path segments.
 
 #### Token errors in Claude Code
 
-If Claude shows token/authentication errors, use this quick recovery flow:
+If Claude shows token/authentication errors (after helper auto-refresh/auto-reauth attempts), use this quick recovery flow:
 
 1. Re-authenticate:
    ```bash

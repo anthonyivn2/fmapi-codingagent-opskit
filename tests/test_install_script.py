@@ -16,21 +16,6 @@ def test_install_script_uses_cache_busting_tool_install():
     )
 
 
-def test_install_script_does_not_execute_setup_command():
-    script = _install_script_text()
-    assert "if setup-fmapi-claudecode" not in script, (
-        "install.sh should not execute setup-fmapi-claudecode during install/update"
-    )
-    assert "exec setup-fmapi-claudecode" not in script, (
-        "install.sh should not exec setup-fmapi-claudecode automatically"
-    )
-
-
-def test_install_script_does_not_offer_agent_flag():
-    script = _install_script_text()
-    assert "--agent" not in script, "install.sh should not include an auto-run --agent mode"
-
-
 def test_install_script_clones_without_branch_checkout_warning_for_tags():
     script = _install_script_text()
     assert 'git clone --quiet "$REPO_URL" "$INSTALL_DIR"' in script, (

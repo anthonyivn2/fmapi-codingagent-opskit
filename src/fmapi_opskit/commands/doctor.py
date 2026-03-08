@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -465,86 +466,123 @@ def _doctor_token_cache(cfg: FmapiConfig) -> bool:
     console = get_console()
     console.print("  [bold]Token Cache[/bold]")
 
-    if not cfg.found or not cfg.helper_file:
+    if not cfg.found:
         console.print("  [dim]SKIP[/dim]  No configuration found")
         console.print()
         return True
 
-    cache_dir = Path(cfg.helper_file).parent
-    cache_file = cache_dir / ".fmapi-token-cache"
-    lock_dir = cache_dir / ".fmapi-token-lock"
+    cache_dir = Path.home() / ".databricks"
+    cache_file = cache_dir / "token-cache.json"
+    lock_dir = cache_dir / ".fmapi-token-cache-expire-lock"
 
-    _check_token_cache_file(console, cache_file, int(time.time()))
+    _check_token_cache_file(console, cache_file, int(time.time()), cfg.profile)
     _check_token_lock(console, lock_dir)
 
     console.print()
     return True
 
 
-def _check_token_cache_file(console: Console, cache_file: Path, now: int) -> None:
-    """Display token cache status for the doctor command."""
+def _parse_expiry_epoch(expiry_value: str) -> int | None:
+    """Parse an ISO-8601 expiry timestamp into epoch seconds."""
+    text = expiry_value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+def _check_token_cache_file(
+    console: Console, cache_file: Path, now: int, profile: str | None = None
+) -> None:
+    """Display Databricks token-cache.json status for the doctor command."""
     if not cache_file.is_file():
         console.print(
-            "  [dim]INFO[/dim]  No token cache yet  [dim]Will be created on first API call[/dim]"
+            "  [dim]INFO[/dim]  No Databricks token cache yet  "
+            "[dim]Will be created after first successful auth[/dim]"
         )
         return
 
     try:
-        lines = cache_file.read_text().strip().split("\n")
+        payload = json.loads(cache_file.read_text())
     except OSError:
         console.print(
-            f"  [warning]WARN[/warning]  Cannot read token cache  [dim]Fix: rm {cache_file}[/dim]"
+            f"  [warning]WARN[/warning]  Cannot read Databricks token cache  "
+            f"[dim]Fix: rm {cache_file}[/dim]"
+        )
+        return
+    except json.JSONDecodeError:
+        console.print(
+            f"  [warning]WARN[/warning]  Databricks token cache is malformed  "
+            f"[dim]Fix: rm {cache_file}[/dim]"
         )
         return
 
-    # v2 format: timestamp, profile, host, expiry_epoch, token
-    if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
-        expiry_epoch = int(lines[3]) if lines[3].isdigit() else 0
-        if expiry_epoch > 0:
-            remaining = expiry_epoch - now
-            if remaining <= 0:
-                console.print(
-                    f"  [warning]WARN[/warning]  Cached token expired  "
-                    f"[dim]{-remaining}s ago — will refresh on next use[/dim]"
-                )
-            elif remaining <= 300:
-                console.print(
-                    f"  [dim]INFO[/dim]  Token cache near expiry  "
-                    f"[dim]{remaining}s remaining — will refresh on next use[/dim]"
-                )
-            else:
-                console.print(
-                    f"  [success]PASS[/success]  Token cache is fresh  "
-                    f"[dim]{remaining}s remaining[/dim]"
-                )
-        else:
-            console.print(
-                "  [success]PASS[/success]  Token cache present  "
-                "[dim]Expiry unknown[/dim]"
-            )
-    # Legacy format: timestamp, token
-    elif len(lines) >= 2 and lines[0].isdigit() and lines[1]:
+    entries = payload.get("tokens") or payload.get("Tokens")
+    if not isinstance(entries, dict) or not entries:
         console.print(
-            "  [success]PASS[/success]  Token cache present (legacy format)  "
+            "  [dim]INFO[/dim]  No cached OAuth sessions yet  "
+            "[dim]Run reauth if needed[/dim]"
+        )
+        return
+
+    entry_key = profile if profile and profile in entries else next(iter(entries.keys()))
+    entry = entries.get(entry_key)
+    if not isinstance(entry, dict):
+        console.print(
+            "  [warning]WARN[/warning]  Token cache entry malformed  "
+            "[dim]Run reauth to regenerate[/dim]"
+        )
+        return
+
+    expiry_epoch = None
+    expiry_value = entry.get("expiry")
+    if isinstance(expiry_value, str):
+        expiry_epoch = _parse_expiry_epoch(expiry_value)
+
+    if expiry_epoch is None:
+        console.print(
+            f"  [success]PASS[/success]  Token cache present for '{entry_key}'  "
             "[dim]Expiry unknown[/dim]"
+        )
+        return
+
+    remaining = expiry_epoch - now
+    if remaining <= 0:
+        console.print(
+            f"  [warning]WARN[/warning]  Cached token for '{entry_key}' expired  "
+            f"[dim]{-remaining}s ago — will refresh on next use[/dim]"
+        )
+    elif remaining <= 300:
+        console.print(
+            f"  [dim]INFO[/dim]  Token cache for '{entry_key}' near expiry  "
+            f"[dim]{remaining}s remaining — will refresh on next use[/dim]"
         )
     else:
         console.print(
-            f"  [warning]WARN[/warning]  Token cache is malformed  [dim]Fix: rm {cache_file}[/dim]"
+            f"  [success]PASS[/success]  Token cache for '{entry_key}' is fresh  "
+            f"[dim]{remaining}s remaining[/dim]"
         )
 
 
 def _check_token_lock(console: Console, lock_dir: Path) -> None:
-    """Display token lock status for the doctor command."""
+    """Display Databricks cache-expire lock status for the doctor command."""
     if not lock_dir.is_dir():
-        console.print("  [success]PASS[/success]  No stale token locks")
+        console.print("  [success]PASS[/success]  No stale cache-expire locks")
         return
 
     if _is_lock_held_by_live_process(lock_dir, console):
         return
 
     console.print(
-        f"  [warning]WARN[/warning]  Stale token lock detected  [dim]Fix: rm -rf {lock_dir}[/dim]"
+        f"  [warning]WARN[/warning]  Stale cache-expire lock detected  "
+        f"[dim]Fix: rm -rf {lock_dir}[/dim]"
     )
 
 
@@ -569,6 +607,7 @@ def _is_lock_held_by_live_process(lock_dir: Path, console: Console) -> bool:
         return False
 
     console.print(
-        f"  [dim]INFO[/dim]  Token lock held by PID {pid}  [dim]Active refresh in progress[/dim]"
+        f"  [dim]INFO[/dim]  Cache-expire lock held by PID {pid}  "
+        "[dim]Active refresh in progress[/dim]"
     )
     return True

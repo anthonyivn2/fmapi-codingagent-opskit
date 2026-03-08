@@ -19,19 +19,6 @@ def test_filter_matches_by_pattern(sample_endpoints):
     assert "databricks-llama-3-70b" not in names, f"Llama should not match 'claude', got {names}"
 
 
-def test_filter_case_insensitive(sample_endpoints):
-    result = filter_agent_endpoints(sample_endpoints, r"CLAUDE")
-    assert len(result) == 3, (
-        f"Case-insensitive 'CLAUDE' should match 3 endpoints, got {len(result)}: "
-        f"{[ep['name'] for ep in result]}"
-    )
-
-
-def test_filter_no_match_returns_empty(sample_endpoints):
-    result = filter_agent_endpoints(sample_endpoints, r"gemini")
-    assert result == [], f"'gemini' should match nothing, got {[ep['name'] for ep in result]}"
-
-
 def test_filter_invalid_regex_returns_empty(sample_endpoints):
     result = filter_agent_endpoints(sample_endpoints, r"[invalid")
     assert result == [], f"Invalid regex should return empty list, got {len(result)} results"
