@@ -11,33 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Hardened OAuth helper token cache and re-auth lifecycle behavior.
-- Added JWT-only expiry handling for OAuth token freshness checks.
-- Reduced OAuth re-auth delay in helper flow.
-- Avoided annotated Git tag checkout warnings in installer tag installs.
-- Fixed `_fetch_token` discarding valid near-expiry tokens (caused 403 errors in Claude Code).
-- Fixed near-expiry token refresh to clear Databricks CLI token cache and force a real OAuth refresh.
-- Changed near-expiry token refresh to expire the access token in-place instead of deleting the entire Databricks token cache, preserving the refresh token for silent OAuth refresh.
-- Simplified `fmapi-key-helper.sh` auto re-auth flow by removing headless/WSL branching and `pkill`-based process-tree handling while keeping `BROWSER=none` fallback.
-- Aligned Python `get_oauth_token()` with helper behavior by forcing Databricks token-cache expiry refresh before retrying near-expiry tokens.
+- Fixed 403 errors caused by near-expiry OAuth tokens being discarded instead of refreshed.
+- Fixed token refresh to preserve the refresh token for silent OAuth renewal.
+- Fixed annotated Git tag checkout warnings in the bootstrap installer.
 
 ### Changed
 
-- Replaced age-based token cache eviction (240s max-age) with expiry-based validation (300s buffer).
-- Updated `doctor` and `status` dashboard to report token freshness based on actual expiry instead of cache age.
-- Simplified auth, doctor, reauth, and test helper internals.
-- Trimmed test suite from 123 to 108 tests by removing obsolete and low-value cases.
+- Replaced age-based token cache eviction (240s max-age) with JWT expiry-based validation (300s buffer).
+- Simplified `fmapi-key-helper.sh` by removing headless/WSL branching and `pkill`-based process handling.
+- Updated `doctor` and `status` dashboards to report token freshness from actual JWT expiry.
+- Cleaned up test suite: removed obsolete tests, added prompt and model-selection coverage (123 → 108 tests).
 
 ### Added
 
-- UI prompt test coverage for setup flows.
-- Interactive setup model selection now lists available endpoint names and includes a final custom model option.
-- Custom model entry now supports prefilled type-over input and endpoint rows omit redundant availability labels.
-
-### Removed
-
-- Removed dead root `templates/` directory (only `src/fmapi_opskit/templates/` is used).
-- Removed obsolete test files for deleted features (clone dir, helper migration, helper script validity).
+- Interactive model selection during setup now lists available workspace endpoints with a custom entry option.
 
 ## [0.1.0] - 2025-05-01
 
