@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - UI prompt test coverage for setup flows.
+- Interactive setup model selection now lists available endpoint names and includes a final custom model option.
+- Custom model entry now supports prefilled type-over input and endpoint rows omit redundant availability labels.
 
 ## [0.1.0] - 2025-05-01
 
