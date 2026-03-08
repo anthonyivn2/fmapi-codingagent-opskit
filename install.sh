@@ -17,6 +17,24 @@ success() { echo -e "  ${GREEN}${BOLD}ok${RESET} $1"; }
 warn()    { echo -e "  ${YELLOW}${BOLD}!!${RESET}${YELLOW} $1${RESET}"; }
 error()   { echo -e "\n  ${RED}${BOLD}!! ERROR${RESET}${RED} $1${RESET}\n" >&2; }
 
+_is_tag_ref() {
+  local repo="$1"
+  local ref="$2"
+  git -C "$repo" show-ref --verify --quiet "refs/tags/$ref"
+}
+
+_checkout_ref() {
+  local repo="$1"
+  local ref="$2"
+  if _is_tag_ref "$repo" "$ref"; then
+    local tag_commit
+    tag_commit=$(git -C "$repo" rev-parse "refs/tags/$ref^{}")
+    git -C "$repo" checkout --quiet "$tag_commit" >/dev/null 2>&1
+  else
+    git -C "$repo" checkout --quiet "$ref"
+  fi
+}
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 # Detect existing FMAPI config in ~/.claude/settings.json
@@ -109,8 +127,10 @@ if [[ -d "${INSTALL_DIR}/.git" ]]; then
   info "Existing installation found at ${DIM}${INSTALL_DIR}${RESET}"
   info "Updating..."
   git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout --quiet "$BRANCH"
-  git -C "$INSTALL_DIR" pull --quiet origin "$BRANCH"
+  _checkout_ref "$INSTALL_DIR" "$BRANCH"
+  if ! _is_tag_ref "$INSTALL_DIR" "$BRANCH"; then
+    git -C "$INSTALL_DIR" pull --quiet origin "$BRANCH"
+  fi
 
   # Capture post-update version
   if [[ -f "${INSTALL_DIR}/VERSION" ]]; then
@@ -128,7 +148,8 @@ else
     exit 1
   fi
   info "Cloning to ${DIM}${INSTALL_DIR}${RESET}..."
-  git clone --quiet --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  git clone --quiet "$REPO_URL" "$INSTALL_DIR"
+  _checkout_ref "$INSTALL_DIR" "$BRANCH"
   success "Installed."
 fi
 
