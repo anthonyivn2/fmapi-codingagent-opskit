@@ -80,6 +80,17 @@ if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
     cat "$_stderr_file" >&2
   fi
 
+  _sleep_file="${FMAPI_TEST_STATE_DIR}/login-sleep-seconds"
+  if [ -f "$_sleep_file" ]; then
+    _sleep_seconds=$(cat "$_sleep_file")
+    case "$_sleep_seconds" in
+      ''|*[!0-9]*) _sleep_seconds=0 ;;
+    esac
+    if [ "$_sleep_seconds" -gt 0 ]; then
+      sleep "$_sleep_seconds"
+    fi
+  fi
+
   _exit_file="${FMAPI_TEST_STATE_DIR}/login-exit-code"
   if [ -f "$_exit_file" ]; then
     _code=$(cat "$_exit_file")
@@ -363,6 +374,40 @@ def test_helper_reauth_routes_login_output_to_stderr(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "fresh-after-reauth"
     assert "Opening https://example/login" in result.stderr
+
+
+def test_helper_reauth_returns_before_long_login_process_exits(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "token-1.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-2.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-default.json").write_text(
+        '{"access_token": "fresh-after-reauth", "expires_in": 3600}'
+    )
+    (state_dir / "login-sleep-seconds").write_text("5")
+    (state_dir / "login-stdout.txt").write_text("Opening https://example/login\n")
+
+    start = time.monotonic()
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "fresh-after-reauth"
+    assert (state_dir / "login-browser.txt").exists(), "Expected login flow to be triggered"
+    assert elapsed < 4, f"Expected helper to continue before login exit, took {elapsed:.2f}s"
 
 
 def test_helper_treats_wayland_as_display_for_ssh_reauth(tmp_path):
