@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Changed near-expiry token refresh to expire the access token in-place instead of deleting the entire Databricks token cache, preserving the refresh token for silent OAuth refresh.
+- Simplified `fmapi-key-helper.sh` auto re-auth flow by removing headless/WSL branching and `pkill`-based process-tree handling while keeping `BROWSER=none` fallback.
+- Aligned Python `get_oauth_token()` with helper behavior by forcing Databricks token-cache expiry refresh before retrying near-expiry tokens.
+
+### Removed
+
+- Removed dead root `templates/` directory (only `src/fmapi_opskit/templates/` is used).
+
 ## [0.1.1] - 2026-03-08
 
 ### Fixed
