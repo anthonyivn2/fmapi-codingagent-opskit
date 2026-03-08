@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import subprocess
+import time
 from pathlib import Path
 
 import fmapi_opskit.auth as auth
+
+
+def _make_jwt_with_exp(exp_epoch: int) -> str:
+    """Build an unsigned JWT token containing an exp claim."""
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode()
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp_epoch}).encode()).decode()
+    return f"{header.rstrip('=')}.{payload.rstrip('=')}.sig"
 
 
 def _patch_home(monkeypatch, tmp_path: Path) -> Path:
@@ -135,6 +145,27 @@ def test_get_oauth_token_retries_when_first_token_near_expiry(monkeypatch):
     token = auth.get_oauth_token("test-profile")
 
     assert token == "fresh-token", "Expected retry to return a refreshed token"
+
+
+def test_get_oauth_token_retries_when_expiry_only_in_jwt_claim(monkeypatch):
+    """Near-expiry JWT should trigger retry even without expires_in metadata."""
+    now = int(time.time())
+    stale_jwt = _make_jwt_with_exp(now + 30)
+    fresh_jwt = _make_jwt_with_exp(now + 3600)
+
+    calls = iter(
+        [
+            {"access_token": stale_jwt},
+            {"access_token": fresh_jwt},
+        ]
+    )
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
+
+    token = auth.get_oauth_token("test-profile")
+
+    assert token == fresh_jwt, "Expected JWT exp claim fallback to trigger retry"
 
 
 def test_get_oauth_token_rejects_token_that_stays_near_expiry(monkeypatch):

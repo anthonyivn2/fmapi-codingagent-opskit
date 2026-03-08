@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from fmapi_opskit.agents.claudecode import ClaudeCodeAdapter
@@ -35,6 +37,13 @@ def _render_helper_for_test(tmp_path: Path, host: str, profile: str) -> Path:
         mode=0o700,
     )
     return helper_file
+
+
+def _make_jwt_with_exp(exp_epoch: int) -> str:
+    """Build an unsigned JWT token containing an exp claim."""
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode()
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp_epoch}).encode()).decode()
+    return f"{header.rstrip('=')}.{payload.rstrip('=')}.sig"
 
 
 def _write_stub_binaries(bin_dir: Path) -> None:
@@ -88,6 +97,7 @@ exit 1
 """
 
     jq_script = """#!/usr/bin/env python3
+import base64
 import datetime
 import json
 import sys
@@ -108,10 +118,6 @@ def print_raw(value):
         sys.stdout.write("")
         return
     sys.stdout.write(str(value))
-
-if "access_token" in query:
-    print_raw(payload.get("access_token", ""))
-    raise SystemExit(0)
 
 if "expires_in" in query or "expiresIn" in query or "fromdateiso8601" in query:
     expires_in = payload.get("expires_in", payload.get("expiresIn"))
@@ -138,6 +144,28 @@ if "expires_in" in query or "expiresIn" in query or "fromdateiso8601" in query:
             raise SystemExit(0)
         except Exception:
             pass
+
+    token = payload.get("access_token")
+    if 'split(".")' in query and isinstance(token, str) and token:
+        parts = token.split(".")
+        if len(parts) >= 2 and parts[1]:
+            padded = parts[1] + ("=" * (-len(parts[1]) % 4))
+            try:
+                decoded = base64.urlsafe_b64decode(padded.encode()).decode()
+                token_payload = json.loads(decoded)
+                exp_epoch = token_payload.get("exp")
+                if exp_epoch is not None:
+                    print_raw(int(float(exp_epoch) - datetime.datetime.now(datetime.timezone.utc).timestamp()))
+                    raise SystemExit(0)
+            except Exception:
+                pass
+
+    print_raw("")
+    raise SystemExit(0)
+
+if "access_token" in query:
+    print_raw(payload.get("access_token", ""))
+    raise SystemExit(0)
 
 print_raw("")
 """
@@ -274,6 +302,36 @@ def test_helper_retries_near_expiry_and_returns_refreshed_token(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "refreshed-token"
+    assert calls == "2", f"Expected 2 token calls (retry path), got {calls}"
+
+
+def test_helper_retries_when_expiry_only_in_jwt_claim(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    now = int(time.time())
+    stale_jwt = _make_jwt_with_exp(now + 30)
+    fresh_jwt = _make_jwt_with_exp(now + 3600)
+    (state_dir / "token-1.json").write_text(json.dumps({"access_token": stale_jwt}))
+    (state_dir / "token-2.json").write_text(json.dumps({"access_token": fresh_jwt}))
+
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+    calls = (state_dir / "token-count").read_text().strip()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == fresh_jwt
     assert calls == "2", f"Expected 2 token calls (retry path), got {calls}"
 
 

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+from base64 import urlsafe_b64decode
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -434,7 +435,40 @@ def _token_expires_in_seconds(token_data: dict) -> int | None:
         )
         return seconds
 
+    token = token_data.get("access_token")
+    if isinstance(token, str) and token:
+        jwt_seconds = _jwt_expires_in_seconds(token)
+        if jwt_seconds is not None:
+            return jwt_seconds
+
     return None
+
+
+def _jwt_expires_in_seconds(token: str) -> int | None:
+    """Extract seconds remaining from JWT exp claim, when present."""
+    parts = token.split(".")
+    if len(parts) < 2 or not parts[1]:
+        return None
+
+    payload_b64 = parts[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)
+
+    try:
+        payload_raw = urlsafe_b64decode(payload_b64.encode("ascii"))
+        payload = json.loads(payload_raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+    exp_value = payload.get("exp")
+    if exp_value is None:
+        return None
+
+    try:
+        exp_epoch = int(float(exp_value))
+    except (TypeError, ValueError):
+        return None
+
+    return exp_epoch - int(datetime.now(timezone.utc).timestamp())
 
 
 def repair_malformed_token_cache() -> bool:

@@ -53,6 +53,26 @@ _get_expires_in_seconds() {
       (
         (.expiry // .expires_at // .expiresAt // empty)
         | (fromdateiso8601? - now)
+      ) //
+      (
+        try (
+          (.access_token // empty)
+          | split(".")[1]? // empty
+          | gsub("-"; "+")
+          | gsub("_"; "/")
+          | . + (
+              if (length % 4) == 2 then "=="
+              elif (length % 4) == 3 then "="
+              elif (length % 4) == 0 then ""
+              else ""
+              end
+            )
+          | @base64d
+          | fromjson?
+          | .exp // empty
+          | tonumber?
+          | (. - now)
+        ) catch empty
       )
     )
     | tonumber?
