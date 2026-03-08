@@ -33,7 +33,7 @@ _fetch_ref() {
   local repo="$1"
   local ref="$2"
   if _is_remote_tag_ref "$repo" "$ref"; then
-    git -C "$repo" fetch --quiet origin "refs/tags/$ref:refs/tags/$ref"
+    git -C "$repo" fetch --quiet origin "+refs/tags/$ref:refs/tags/$ref"
   else
     git -C "$repo" fetch --quiet origin "$ref"
   fi

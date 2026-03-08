@@ -45,7 +45,7 @@ def test_install_script_clones_without_branch_checkout_warning_for_tags():
 
 def test_install_script_fetches_tag_refspec_before_checkout():
     script = _install_script_text()
-    assert 'git -C "$repo" fetch --quiet origin "refs/tags/$ref:refs/tags/$ref"' in script, (
-        "install.sh should fetch remote tags into local tag refs so updates can checkout newly "
-        "published versions"
+    assert 'git -C "$repo" fetch --quiet origin "+refs/tags/$ref:refs/tags/$ref"' in script, (
+        "install.sh should force-refresh local tags from remote so updates do not fail when "
+        "release tags are moved"
     )
