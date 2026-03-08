@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from base64 import urlsafe_b64decode
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# OAuth URL extraction and polling constants
+# ---------------------------------------------------------------------------
+
+_OAUTH_URL_PATTERN = re.compile(r"(https://\S+(?:/oidc/(?:v1/)?authorize|/authorize)\S*)")
+_URL_READ_TIMEOUT = 30  # seconds to wait for URL in CLI output
+_POLL_TIMEOUT = 300  # seconds to poll for token (5 min)
+_POLL_INTERVAL = 3  # seconds between poll attempts
 
 # ---------------------------------------------------------------------------
 # Databricks CLI subprocess wrappers
@@ -79,23 +93,187 @@ def run_databricks_json(*args: str, profile: str | None = None) -> dict | list |
         return None
 
 
-def auth_login(host: str, profile: str) -> bool:
-    """Run databricks auth login (interactive — inherits terminal).
+def _extract_oauth_url(text: str) -> str | None:
+    """Extract an OAuth authorization URL from CLI output text."""
+    match = _OAUTH_URL_PATTERN.search(text)
+    return match.group(1) if match else None
 
-    Returns True if the command succeeded.
+
+def _display_oauth_url(url: str) -> None:
+    """Display the OAuth URL prominently using a Rich Panel."""
+    from rich.panel import Panel
+
+    from fmapi_opskit.ui.console import get_console
+
+    console = get_console()
+    console.print()
+    console.print(
+        Panel(
+            f"[bold]{url}[/bold]\n\n"
+            "[dim]Open this URL in any browser to authenticate.\n"
+            "Tip: If on SSH, open it from your local machine and keep this command running.[/dim]",
+            title="[info]OAuth Login URL[/info]",
+            border_style="info",
+            padding=(1, 2),
+        )
+    )
+    console.print()
+
+
+def _read_stream_lines(stream: object, lines: list[str]) -> None:
+    """Thread target: read a stream line-by-line into a list."""
+    try:
+        for raw_line in stream:  # type: ignore[union-attr]
+            lines.append(raw_line)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _poll_for_token(profile: str, timeout: int = _POLL_TIMEOUT) -> bool:
+    """Poll `databricks auth token` until a valid token appears or timeout.
+
+    Returns True when a token is found, False on timeout.
     """
+    from fmapi_opskit.ui import logging as log
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        token = get_oauth_token(profile)
+        if token:
+            log.debug("poll_for_token: token acquired")
+            return True
+        time.sleep(_POLL_INTERVAL)
+    return False
+
+
+def _terminate_process(proc: subprocess.Popen) -> None:  # type: ignore[type-arg]
+    """Safely terminate a subprocess."""
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001
+        try:
+            proc.kill()
+            proc.wait(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _start_auth_login_process(host: str, profile: str) -> subprocess.Popen | None:  # type: ignore[type-arg]
+    """Start `databricks auth login` in URL-print mode."""
+    from fmapi_opskit.ui import logging as log
+
+    cmd = ["databricks", "auth", "login", "--host", host, "--profile", profile]
+    env = {**os.environ, "BROWSER": "none"}
+
+    try:
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            env=env,
+        )
+    except FileNotFoundError:
+        log.error("databricks CLI not found.")
+        return None
+
+
+def _start_auth_login_readers(
+    proc: subprocess.Popen,  # type: ignore[type-arg]
+) -> tuple[list[str], list[str], threading.Thread, threading.Thread]:
+    """Start background readers for auth-login stdout/stderr."""
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    stdout_thread = threading.Thread(
+        target=_read_stream_lines, args=(proc.stdout, stdout_lines), daemon=True
+    )
+    stderr_thread = threading.Thread(
+        target=_read_stream_lines, args=(proc.stderr, stderr_lines), daemon=True
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    return stdout_lines, stderr_lines, stdout_thread, stderr_thread
+
+
+def _wait_for_oauth_url(
+    proc: subprocess.Popen,  # type: ignore[type-arg]
+    stdout_lines: list[str],
+    stderr_lines: list[str],
+    timeout: int = _URL_READ_TIMEOUT,
+) -> str | None:
+    """Wait briefly for an OAuth URL to appear in process output."""
+    url_found: str | None = None
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        for line in stdout_lines + stderr_lines:
+            url_found = _extract_oauth_url(line)
+            if url_found:
+                return url_found
+
+        if proc.poll() is not None:
+            return None
+
+        time.sleep(0.3)
+
+    return None
+
+
+def _collect_auth_login_result(
+    proc: subprocess.Popen,  # type: ignore[type-arg]
+    stdout_thread: threading.Thread,
+    stderr_thread: threading.Thread,
+    stderr_lines: list[str],
+) -> tuple[bool, str]:
+    """Collect process completion details for auth-login without URL path."""
+    proc.wait(timeout=30)
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    return proc.returncode == 0, "".join(stderr_lines).strip()
+
+
+def auth_login(host: str, profile: str) -> bool:
+    """Run databricks auth login with URL display and auto-polling.
+
+    Launches ``databricks auth login`` as a background process with
+    ``BROWSER=none`` to suppress auto-open and force URL printing.
+    Extracts the OAuth URL from output, displays it prominently, then
+    polls ``databricks auth token`` until authentication completes.
+
+    Returns True if a valid token was obtained.
+    """
+    from fmapi_opskit.ui import logging as log
+
     repair_malformed_token_cache()
 
-    result = run_databricks(
-        "auth",
-        "login",
-        "--host",
-        host,
-        profile=profile,
-        capture_output=False,
-        timeout=120,
+    proc = _start_auth_login_process(host, profile)
+    if proc is None:
+        return False
+
+    stdout_lines, stderr_lines, stdout_thread, stderr_thread = _start_auth_login_readers(proc)
+    url_found = _wait_for_oauth_url(proc, stdout_lines, stderr_lines)
+
+    if url_found:
+        _display_oauth_url(url_found)
+        log.info("Waiting for authentication to complete ...")
+        success = _poll_for_token(profile)
+        _terminate_process(proc)
+        return success
+
+    completed_ok, all_stderr = _collect_auth_login_result(
+        proc, stdout_thread, stderr_thread, stderr_lines
     )
-    return result.success
+    if completed_ok:
+        return True
+
+    if all_stderr:
+        log.debug(f"auth_login stderr: {all_stderr}")
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +313,12 @@ def check_oauth_status(profile: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def authenticate(host: str, profile: str, platform_info: PlatformInfo) -> None:  # noqa: F821
-    """Run the OAuth authentication flow."""
+def authenticate(host: str, profile: str) -> None:
+    """Run the OAuth authentication flow.
+
+    URL display and auto-polling are handled inside ``auth_login()``,
+    so no platform-specific warnings are needed here.
+    """
     from fmapi_opskit.ui import logging as log
 
     log.heading("Authenticating")
@@ -148,27 +330,8 @@ def authenticate(host: str, profile: str, platform_info: PlatformInfo) -> None: 
     log.debug(f"authenticate: existing token={'present' if token else 'missing'}")
 
     if not token:
-        if platform_info.is_headless:
-            from fmapi_opskit.ui.console import get_console
-
-            get_console().print(
-                "  [warning]WARN[/warning]  Headless SSH session detected. "
-                "Browser-based OAuth may not work."
-            )
-
-        if platform_info.is_wsl and not shutil.which("wslview") and not shutil.which("xdg-open"):
-            log.warn("WSL detected but no browser opener found.")
-            log.info(
-                "If the browser does not open, install wslu: "
-                "[info]sudo apt-get install -y wslu[/info]"
-            )
-
         log.info(f"Logging in to {host} ...")
-        if not auth_login(host, profile):
-            log.error("Failed to authenticate.")
-            sys.exit(1)
-
-        token = get_oauth_token(profile)
+        token = _login_and_fetch_token(host, profile, failure_message="Failed to authenticate.")
 
         if not token:
             log.warn(
@@ -176,10 +339,11 @@ def authenticate(host: str, profile: str, platform_info: PlatformInfo) -> None: 
                 "clearing Databricks token cache and retrying once."
             )
             clear_token_cache()
-            if not auth_login(host, profile):
-                log.error("Failed to authenticate after retry.")
-                sys.exit(1)
-            token = get_oauth_token(profile)
+            token = _login_and_fetch_token(
+                host,
+                profile,
+                failure_message="Failed to authenticate after retry.",
+            )
 
     if not token:
         log.error("Failed to get OAuth access token.")
@@ -189,6 +353,17 @@ def authenticate(host: str, profile: str, platform_info: PlatformInfo) -> None: 
 
     # Clean up legacy FMAPI PATs
     _cleanup_legacy_pats(profile)
+
+
+def _login_and_fetch_token(host: str, profile: str, *, failure_message: str) -> str:
+    """Run auth login once and fetch token, exiting on login failure."""
+    from fmapi_opskit.ui import logging as log
+
+    if not auth_login(host, profile):
+        log.error(failure_message)
+        sys.exit(1)
+
+    return get_oauth_token(profile)
 
 
 def _cleanup_legacy_pats(profile: str) -> None:
@@ -255,10 +430,43 @@ def _token_expires_in_seconds(token_data: dict) -> int | None:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
-        seconds = int((expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+        seconds = int(
+            (expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds()
+        )
         return seconds
 
+    token = token_data.get("access_token")
+    if isinstance(token, str) and token:
+        return _jwt_expires_in_seconds(token)
+
     return None
+
+
+def _jwt_expires_in_seconds(token: str) -> int | None:
+    """Extract seconds remaining from JWT exp claim, when present."""
+    parts = token.split(".")
+    if len(parts) < 2 or not parts[1]:
+        return None
+
+    padded = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        payload = json.loads(urlsafe_b64decode(padded))
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+    exp = payload.get("exp")
+    if exp is None:
+        return None
+
+    try:
+        return int(float(exp)) - int(datetime.now(timezone.utc).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _databricks_token_cache_path() -> Path:
+    """Return the path to the Databricks CLI token cache file."""
+    return Path.home() / ".databricks" / "token-cache.json"
 
 
 def repair_malformed_token_cache() -> bool:
@@ -266,7 +474,7 @@ def repair_malformed_token_cache() -> bool:
 
     Returns True if a malformed cache file was removed, else False.
     """
-    cache_path = Path.home() / ".databricks" / "token-cache.json"
+    cache_path = _databricks_token_cache_path()
     if not cache_path.is_file():
         return False
 
@@ -290,7 +498,7 @@ def clear_token_cache() -> bool:
 
     Returns True if a cache file was removed, else False.
     """
-    cache_path = Path.home() / ".databricks" / "token-cache.json"
+    cache_path = _databricks_token_cache_path()
     if not cache_path.is_file():
         return False
 

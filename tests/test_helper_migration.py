@@ -64,10 +64,7 @@ def test_do_reauth_migrates_legacy_helper(tmp_path, monkeypatch):
     monkeypatch.setattr(reauth_cmd, "check_oauth_status", lambda profile: True)
     monkeypatch.setattr(reauth_cmd, "clear_helper_token_cache", lambda helper: False)
 
-    reauth_cmd.do_reauth(
-        ClaudeCodeAdapter(),
-        PlatformInfo(os_type="Linux", is_wsl=False, wsl_version="", wsl_distro=""),
-    )
+    reauth_cmd.do_reauth(ClaudeCodeAdapter())
 
     helper_text = helper_file.read_text()
     assert "token=$(_fetch_token)" not in helper_text

@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import json
+import subprocess
+import time
 from pathlib import Path
 
 import fmapi_opskit.auth as auth
-from fmapi_opskit.core import PlatformInfo
+
+
+def _make_jwt_with_exp(exp_epoch: int) -> str:
+    """Build an unsigned JWT token containing an exp claim."""
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode()
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp_epoch}).encode()).decode()
+    return f"{header.rstrip('=')}.{payload.rstrip('=')}.sig"
 
 
 def _patch_home(monkeypatch, tmp_path: Path) -> Path:
@@ -39,23 +49,37 @@ def test_repair_malformed_token_cache_keeps_valid_json(tmp_path, monkeypatch):
 
 
 def test_auth_login_repairs_cache_before_login(tmp_path, monkeypatch):
-    """auth_login should remove malformed cache before invoking login command."""
+    """auth_login should remove malformed cache before launching the login process."""
     cache_file = _patch_home(monkeypatch, tmp_path)
     cache_file.write_text('{"broken": true}}')
 
-    def fake_run_databricks(*args, **kwargs):
-        assert not cache_file.exists(), "Cache should be repaired before login command"
-        assert args == ("auth", "login", "--host", "https://example.cloud.databricks.com")
-        assert kwargs["profile"] == "test-profile"
-        assert kwargs["capture_output"] is False
-        assert kwargs["timeout"] == 120
-        return auth.DatabricksResult(success=True)
+    popen_called = {"cache_existed": None}
 
-    monkeypatch.setattr(auth, "run_databricks", fake_run_databricks)
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            popen_called["cache_existed"] = cache_file.exists()
+            self.stdout = iter([])
+            self.stderr = iter([])
+            self.returncode = 0
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
 
     ok = auth.auth_login("https://example.cloud.databricks.com", "test-profile")
 
-    assert ok is True, "Expected auth_login success from mocked CLI result"
+    assert ok is True, "Expected auth_login success from mocked process"
+    assert popen_called["cache_existed"] is False, "Cache should be repaired before Popen"
 
 
 def test_get_oauth_token_repairs_cache_before_fetch(tmp_path, monkeypatch):
@@ -106,7 +130,6 @@ def test_clear_helper_token_cache_noop_when_missing(tmp_path):
     assert removed is False, "Expected no removals when cache artifacts are absent"
 
 
-
 def test_get_oauth_token_retries_when_first_token_near_expiry(monkeypatch):
     """Near-expiry token should trigger a retry and return a refreshed token."""
     calls = iter(
@@ -122,6 +145,27 @@ def test_get_oauth_token_retries_when_first_token_near_expiry(monkeypatch):
     token = auth.get_oauth_token("test-profile")
 
     assert token == "fresh-token", "Expected retry to return a refreshed token"
+
+
+def test_get_oauth_token_retries_when_expiry_only_in_jwt_claim(monkeypatch):
+    """Near-expiry JWT should trigger retry even without expires_in metadata."""
+    now = int(time.time())
+    stale_jwt = _make_jwt_with_exp(now + 30)
+    fresh_jwt = _make_jwt_with_exp(now + 3600)
+
+    calls = iter(
+        [
+            {"access_token": stale_jwt},
+            {"access_token": fresh_jwt},
+        ]
+    )
+
+    monkeypatch.setattr(auth, "repair_malformed_token_cache", lambda: False)
+    monkeypatch.setattr(auth, "run_databricks_json", lambda *args, **kwargs: next(calls))
+
+    token = auth.get_oauth_token("test-profile")
+
+    assert token == fresh_jwt, "Expected JWT exp claim fallback to trigger retry"
 
 
 def test_get_oauth_token_rejects_token_that_stays_near_expiry(monkeypatch):
@@ -162,8 +206,7 @@ def test_authenticate_clears_cache_and_retries_when_token_missing(monkeypatch):
     monkeypatch.setattr(auth, "auth_login", fake_auth_login)
     monkeypatch.setattr(auth, "clear_token_cache", fake_clear_token_cache)
 
-    pi = PlatformInfo(os_type="Darwin", is_wsl=False, wsl_version="", wsl_distro="")
-    auth.authenticate("https://example.cloud.databricks.com", "test-profile", pi)
+    auth.authenticate("https://example.cloud.databricks.com", "test-profile")
 
     assert login_calls == [
         ("https://example.cloud.databricks.com", "test-profile"),
@@ -181,3 +224,142 @@ def test_clear_token_cache_deletes_cache_file(tmp_path, monkeypatch):
 
     assert cleared is True
     assert not cache_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# OAuth URL extraction tests
+# ---------------------------------------------------------------------------
+
+
+def test_extract_oauth_url_from_aws_output():
+    """URL extraction should work for AWS workspace OAuth URLs."""
+    text = (
+        "Opening https://dbc-abc123.cloud.databricks.com/oidc/v1/authorize?"
+        "client_id=databricks-cli&response_type=code&scope=all-apis"
+    )
+    url = auth._extract_oauth_url(text)
+    assert url is not None
+    assert "dbc-abc123.cloud.databricks.com/oidc/v1/authorize" in url
+
+
+def test_extract_oauth_url_from_azure_output():
+    """URL extraction should work for Azure workspace OAuth URLs."""
+    text = (
+        "Go to https://adb-12345.azuredatabricks.net/oidc/authorize?"
+        "client_id=databricks-cli&response_type=code"
+    )
+    url = auth._extract_oauth_url(text)
+    assert url is not None
+    assert "azuredatabricks.net/oidc/authorize" in url
+
+
+def test_extract_oauth_url_from_gcp_output():
+    """URL extraction should work for GCP workspace OAuth URLs."""
+    text = (
+        "Visit: https://123456.gcp.databricks.com/oidc/v1/authorize?"
+        "client_id=databricks-cli&scope=all"
+    )
+    url = auth._extract_oauth_url(text)
+    assert url is not None
+    assert "gcp.databricks.com/oidc/v1/authorize" in url
+
+
+def test_extract_oauth_url_generic_authorize():
+    """URL extraction should match a generic /authorize path."""
+    text = "Open https://accounts.cloud.databricks.com/authorize?client_id=x in your browser"
+    url = auth._extract_oauth_url(text)
+    assert url is not None
+    assert "/authorize" in url
+
+
+def test_extract_oauth_url_returns_none_for_no_match():
+    """No URL should be extracted from text without an OAuth URL."""
+    assert auth._extract_oauth_url("Login successful!") is None
+    assert auth._extract_oauth_url("https://example.com/dashboard") is None
+    assert auth._extract_oauth_url("") is None
+
+
+# ---------------------------------------------------------------------------
+# Polling tests
+# ---------------------------------------------------------------------------
+
+
+def test_poll_for_token_returns_true_when_token_appears(monkeypatch):
+    """Polling should return True once a valid token is found."""
+    call_count = {"n": 0}
+
+    def fake_get_oauth_token(profile: str) -> str:
+        call_count["n"] += 1
+        return "fresh-token" if call_count["n"] >= 3 else ""
+
+    monkeypatch.setattr(auth, "get_oauth_token", fake_get_oauth_token)
+    monkeypatch.setattr(auth, "_POLL_INTERVAL", 0.01)
+
+    result = auth._poll_for_token("test-profile", timeout=10)
+    assert result is True
+    assert call_count["n"] >= 3
+
+
+def test_poll_for_token_returns_false_on_timeout(monkeypatch):
+    """Polling should return False when timeout is reached without a token."""
+    monkeypatch.setattr(auth, "get_oauth_token", lambda profile: "")
+    monkeypatch.setattr(auth, "_POLL_INTERVAL", 0.01)
+
+    result = auth._poll_for_token("test-profile", timeout=0.05)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# auth_login integration test
+# ---------------------------------------------------------------------------
+
+
+def test_auth_login_extracts_url_and_polls(tmp_path, monkeypatch):
+    """auth_login should extract URL from Popen output and poll for token."""
+    _patch_home(monkeypatch, tmp_path)
+
+    displayed_urls: list[str] = []
+    poll_called = {"called": False}
+
+    oauth_url = (
+        "https://dbc-test.cloud.databricks.com/oidc/v1/authorize?"
+        "client_id=databricks-cli&response_type=code"
+    )
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            self.stdout = iter([f"Opening {oauth_url}\n"])
+            self.stderr = iter([])
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+
+    def fake_display(url: str) -> None:
+        displayed_urls.append(url)
+
+    monkeypatch.setattr(auth, "_display_oauth_url", fake_display)
+
+    def fake_poll_for_token(profile: str, timeout: int = 300) -> bool:
+        poll_called["called"] = True
+        return True
+
+    monkeypatch.setattr(auth, "_poll_for_token", fake_poll_for_token)
+
+    ok = auth.auth_login("https://dbc-test.cloud.databricks.com", "test-profile")
+
+    assert ok is True
+    assert len(displayed_urls) == 1
+    assert "dbc-test.cloud.databricks.com/oidc/v1/authorize" in displayed_urls[0]
+    assert poll_called["called"] is True

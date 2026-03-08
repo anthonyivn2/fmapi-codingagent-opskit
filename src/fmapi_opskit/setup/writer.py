@@ -94,10 +94,7 @@ def helper_needs_migration(helper_file: str) -> bool:
     if "token=$(_fetch_token)" in helper_text:
         return True
 
-    if "_fmapi_last_expires_in" in helper_text and "_fmapi_last_token" not in helper_text:
-        return True
-
-    return False
+    return "_fmapi_last_expires_in" in helper_text and "_fmapi_last_token" not in helper_text
 
 
 def migrate_helper_if_needed(
