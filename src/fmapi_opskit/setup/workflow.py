@@ -166,12 +166,15 @@ def do_setup(
                     log.error(f"Workspace ID must be numeric. Got: {workspace_id}")
                     sys.exit(1)
 
+    available_models: list[str] = []
+
     # Show available endpoints before model selection (interactive only)
     if not non_interactive:
         endpoints = fetch_endpoints(gather.profile)
         if endpoints:
             filtered = filter_agent_endpoints(endpoints, c.endpoint_filter)
             if filtered:
+                available_models = [str(ep.get("name", "")).strip() for ep in filtered]
                 console.print(f"\n[bold]Available {c.endpoint_title} endpoints[/bold]\n")
                 display_agent_endpoints(filtered)
                 console.print()
@@ -183,6 +186,7 @@ def do_setup(
         cli_sonnet=cli_sonnet,
         cli_haiku=cli_haiku,
         non_interactive=non_interactive,
+        available_models=available_models,
     )
 
     write_settings(

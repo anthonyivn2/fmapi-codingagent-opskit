@@ -9,7 +9,7 @@ from fmapi_opskit.agents.base import AgentAdapter
 from fmapi_opskit.config.models import FileConfig, FmapiConfig
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
-from fmapi_opskit.ui.prompts import prompt_value, select_option
+from fmapi_opskit.ui.prompts import prompt_prefilled_value, prompt_value, select_option
 
 
 def _first_non_empty(*values: str) -> str:
@@ -227,6 +227,57 @@ class ModelResult:
         self.haiku: str = ""
 
 
+def _normalize_available_models(available_models: list[str] | None) -> list[str]:
+    """Normalize available model names to unique non-empty values."""
+    if not available_models:
+        return []
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for model in available_models:
+        name = model.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized.append(name)
+    return normalized
+
+
+def _prompt_model_value(
+    label: str,
+    cli_val: str,
+    default: str,
+    non_interactive: bool,
+    available_models: list[str],
+) -> str:
+    """Prompt for a model value, using menu selection when models are available."""
+    if cli_val:
+        return cli_val
+    if non_interactive:
+        return default
+
+    if not available_models:
+        return prompt_value(label, "", default, False)
+
+    options = [(name, "") for name in available_models]
+    options.append(("Custom model name", "type your own endpoint name"))
+
+    default_index = len(available_models)
+    if default in available_models:
+        default_index = available_models.index(default)
+
+    choice = select_option(label, options, default_index=default_index)
+    if choice == len(available_models):
+        custom_label = "Custom model name" if label == "Model" else f"Custom {label.lower()} name"
+        custom_value = prompt_prefilled_value(custom_label, default)
+        if not custom_value:
+            log.error(f"{label} is required.")
+            sys.exit(1)
+        return custom_value
+
+    return available_models[choice]
+
+
 def gather_config_models(
     gather: GatherResult,
     *,
@@ -235,13 +286,40 @@ def gather_config_models(
     cli_sonnet: str,
     cli_haiku: str,
     non_interactive: bool,
+    available_models: list[str] | None = None,
 ) -> ModelResult:
     """Gather model configuration (after auth, endpoint listing)."""
+    normalized_models = _normalize_available_models(available_models)
+
     result = ModelResult()
-    result.model = prompt_value("Model", cli_model, gather.default_model, non_interactive)
-    result.opus = prompt_value("Opus model", cli_opus, gather.default_opus, non_interactive)
-    result.sonnet = prompt_value("Sonnet model", cli_sonnet, gather.default_sonnet, non_interactive)
-    result.haiku = prompt_value("Haiku model", cli_haiku, gather.default_haiku, non_interactive)
+    result.model = _prompt_model_value(
+        "Model",
+        cli_model,
+        gather.default_model,
+        non_interactive,
+        normalized_models,
+    )
+    result.opus = _prompt_model_value(
+        "Opus model",
+        cli_opus,
+        gather.default_opus,
+        non_interactive,
+        normalized_models,
+    )
+    result.sonnet = _prompt_model_value(
+        "Sonnet model",
+        cli_sonnet,
+        gather.default_sonnet,
+        non_interactive,
+        normalized_models,
+    )
+    result.haiku = _prompt_model_value(
+        "Haiku model",
+        cli_haiku,
+        gather.default_haiku,
+        non_interactive,
+        normalized_models,
+    )
 
     log.debug(
         f"models: model={result.model} opus={result.opus} "

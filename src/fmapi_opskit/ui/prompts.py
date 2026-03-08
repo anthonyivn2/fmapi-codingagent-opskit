@@ -9,6 +9,11 @@ from simple_term_menu import TerminalMenu
 
 from fmapi_opskit.ui.console import get_console
 
+try:
+    import readline
+except ImportError:  # pragma: no cover - Windows without readline
+    readline = None  # type: ignore[assignment]
+
 
 def prompt_value(
     label: str,
@@ -31,6 +36,30 @@ def prompt_value(
     else:
         result = Prompt.ask(f"  [info]?[/info] {label}", console=console)
     return result
+
+
+def prompt_prefilled_value(label: str, default: str) -> str:
+    """Prompt with prefilled editable text when readline is available."""
+    console = get_console()
+
+    if not default:
+        return Prompt.ask(f"  [info]?[/info] {label}", console=console)
+
+    if readline is None:
+        return Prompt.ask(f"  [info]?[/info] {label}", default=default, console=console)
+
+    console.print(f"  [info]?[/info] {label}  [dim](edit and press Enter)[/dim]")
+
+    def _insert_default() -> None:
+        readline.insert_text(default)
+
+    readline.set_startup_hook(_insert_default)
+    try:
+        value = input("  > ").strip()
+    finally:
+        readline.set_startup_hook(None)
+
+    return value or default
 
 
 def select_option(
@@ -56,7 +85,12 @@ def select_option(
     console = get_console()
     console.print(f"  [info]?[/info] {prompt}  [dim](↑/↓ arrows, Enter to select)[/dim]")
 
-    menu_entries = [f"  {label}  ({desc})" for label, desc in options]
+    menu_entries: list[str] = []
+    for label, desc in options:
+        if desc.strip():
+            menu_entries.append(f"  {label}  ({desc})")
+        else:
+            menu_entries.append(f"  {label}")
 
     menu = TerminalMenu(
         menu_entries,
