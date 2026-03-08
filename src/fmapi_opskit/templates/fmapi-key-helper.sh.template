@@ -22,6 +22,7 @@ _FMAPI_TOKEN_CACHE="${_FMAPI_CACHE_DIR}/.fmapi-token-cache"
 _FMAPI_TOKEN_LOCK="${_FMAPI_CACHE_DIR}/.fmapi-token-lock"
 _FMAPI_CACHE_MAX_AGE=240  # seconds — cache considered fresh if younger than this
 _EXPIRY_BUFFER_SECONDS=300  # seconds — avoid returning near-expiry tokens
+_REAUTH_TIMEOUT_SECONDS=180
 _fmapi_last_expires_in=""
 _fmapi_last_token=""
 
@@ -274,16 +275,20 @@ _is_headless() {
   # WSL can open a browser via Windows interop
   [ -n "${WSL_DISTRO_NAME:-}" ] && return 1
   [ -f /proc/version ] && grep -qi 'microsoft' /proc/version 2>/dev/null && return 1
-  [ -n "${SSH_CONNECTION:-}" ] && [ -z "${DISPLAY:-}" ] && return 0
-  [ -n "${SSH_TTY:-}" ] && [ -z "${DISPLAY:-}" ] && return 0
+
+  _has_display=false
+  [ -n "${DISPLAY:-}" ] && _has_display=true
+  [ -n "${WAYLAND_DISPLAY:-}" ] && _has_display=true
+
+  [ -n "${SSH_CONNECTION:-}" ] && [ "$_has_display" != true ] && return 0
+  [ -n "${SSH_TTY:-}" ] && [ "$_has_display" != true ] && return 0
   return 1
 }
 
 if _is_headless; then
-  echo "FMAPI: OAuth session expired in a headless environment." >&2
-  echo "FMAPI: Re-authenticate from a machine with a browser:" >&2
-  echo "FMAPI:   databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
-  exit 1
+  _FMAPI_HEADLESS_REAUTH=true
+else
+  _FMAPI_HEADLESS_REAUTH=false
 fi
 
 _clear_databricks_token_cache() {
@@ -293,15 +298,36 @@ _clear_databricks_token_cache() {
   fi
 }
 
-_reauth_and_emit_token() {
-  _reauth_ok=false
+_run_databricks_login() {
+  _login_browser="$1"
+
   if command -v timeout >/dev/null 2>&1; then
-    env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET timeout 30 databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
-  else
-    _dbx auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" >/dev/null 2>&1 && _reauth_ok=true
+    if [ -n "$_login_browser" ]; then
+      env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET BROWSER="$_login_browser" timeout "$_REAUTH_TIMEOUT_SECONDS" databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2
+    else
+      env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET timeout "$_REAUTH_TIMEOUT_SECONDS" databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2
+    fi
+    return $?
   fi
 
-  if [ "$_reauth_ok" = true ]; then
+  if [ -n "$_login_browser" ]; then
+    env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET BROWSER="$_login_browser" databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2
+  else
+    _dbx auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2
+  fi
+}
+
+_reauth_and_emit_token() {
+  _login_browser=""
+  if [ "$_FMAPI_HEADLESS_REAUTH" = true ]; then
+    echo "FMAPI: OAuth session expired in headless SSH." >&2
+    echo "FMAPI: Open the Databricks login URL below in a local browser and keep this terminal running ..." >&2
+    _login_browser="none"
+  else
+    echo "FMAPI: OAuth session expired. Attempting browser re-authentication ..." >&2
+  fi
+
+  if _run_databricks_login "$_login_browser"; then
     _fetch_token || true
     token="$_fmapi_last_token"
     if [ -n "$token" ]; then
@@ -325,5 +351,11 @@ if _reauth_and_emit_token; then
   exit 0
 fi
 
-echo "FMAPI: OAuth session expired. Run: databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
+if [ "$_FMAPI_HEADLESS_REAUTH" = true ]; then
+  echo "FMAPI: OAuth session expired. Re-auth manually from this SSH session:" >&2
+  echo "FMAPI:   BROWSER=none databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
+else
+  echo "FMAPI: OAuth session expired. Run: databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
+fi
+echo "FMAPI: In Claude Code, run /fmapi-codingagent-reauth" >&2
 exit 1

@@ -58,6 +58,28 @@ if [ "$1" = "auth" ] && [ "$2" = "token" ]; then
 fi
 
 if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
+  _browser_file="${FMAPI_TEST_STATE_DIR}/login-browser.txt"
+  printf '%s' "${BROWSER:-}" > "$_browser_file"
+
+  _stdout_file="${FMAPI_TEST_STATE_DIR}/login-stdout.txt"
+  if [ -f "$_stdout_file" ]; then
+    cat "$_stdout_file"
+  fi
+
+  _stderr_file="${FMAPI_TEST_STATE_DIR}/login-stderr.txt"
+  if [ -f "$_stderr_file" ]; then
+    cat "$_stderr_file" >&2
+  fi
+
+  _exit_file="${FMAPI_TEST_STATE_DIR}/login-exit-code"
+  if [ -f "$_exit_file" ]; then
+    _code=$(cat "$_exit_file")
+    case "$_code" in
+      ''|*[!0-9]*) _code=1 ;;
+    esac
+    exit "$_code"
+  fi
+
   exit 0
 fi
 
@@ -102,12 +124,16 @@ if "expires_in" in query or "expiresIn" in query or "fromdateiso8601" in query:
 
     expiry_value = payload.get("expiry") or payload.get("expires_at") or payload.get("expiresAt")
     if isinstance(expiry_value, str) and expiry_value:
-        normalized = expiry_value.replace("Z", "+00:00") if expiry_value.endswith("Z") else expiry_value
+        normalized = (
+            expiry_value.replace("Z", "+00:00") if expiry_value.endswith("Z") else expiry_value
+        )
         try:
             expiry_dt = datetime.datetime.fromisoformat(normalized)
             if expiry_dt.tzinfo is None:
                 expiry_dt = expiry_dt.replace(tzinfo=datetime.timezone.utc)
-            seconds = int((expiry_dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
+            seconds = int(
+                (expiry_dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            )
             print_raw(seconds)
             raise SystemExit(0)
         except Exception:
@@ -124,13 +150,21 @@ print_raw("")
     jq_path.chmod(0o700)
 
 
-def _run_helper(helper_file: Path, *, home: Path, state_dir: Path) -> subprocess.CompletedProcess[str]:
+def _run_helper(
+    helper_file: Path,
+    *,
+    home: Path,
+    state_dir: Path,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = f"{state_dir.parent / 'bin'}:{env.get('PATH', '')}"
     env["HOME"] = str(home)
     env["FMAPI_TEST_STATE_DIR"] = str(state_dir)
     env.pop("SSH_CONNECTION", None)
     env.pop("SSH_TTY", None)
+    if extra_env:
+        env.update(extra_env)
 
     return subprocess.run(
         [str(helper_file)],
@@ -242,3 +276,137 @@ def test_helper_retries_near_expiry_and_returns_refreshed_token(tmp_path):
     assert result.stdout.strip() == "refreshed-token"
     assert calls == "2", f"Expected 2 token calls (retry path), got {calls}"
 
+
+def test_helper_reauth_routes_login_output_to_stderr(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "token-1.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-2.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-default.json").write_text(
+        '{"access_token": "fresh-after-reauth", "expires_in": 3600}'
+    )
+    (state_dir / "login-stdout.txt").write_text("Opening https://example/login\n")
+
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "fresh-after-reauth"
+    assert "Opening https://example/login" in result.stderr
+
+
+def test_helper_treats_wayland_as_display_for_ssh_reauth(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "token-1.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-2.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-default.json").write_text(
+        '{"access_token": "fresh-wayland", "expires_in": 3600}'
+    )
+
+    result = _run_helper(
+        helper_file,
+        home=home_dir,
+        state_dir=state_dir,
+        extra_env={
+            "SSH_CONNECTION": "10.0.0.1 50000 10.0.0.2 22",
+            "WAYLAND_DISPLAY": "wayland-0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "fresh-wayland"
+
+
+def test_helper_headless_ssh_reauth_uses_browser_none(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "token-1.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-2.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-default.json").write_text(
+        '{"access_token": "fresh-headless", "expires_in": 3600}'
+    )
+    (state_dir / "login-stdout.txt").write_text(
+        "Opening https://example.cloud.databricks.com/oidc/v1/authorize\n"
+    )
+
+    result = _run_helper(
+        helper_file,
+        home=home_dir,
+        state_dir=state_dir,
+        extra_env={
+            "SSH_CONNECTION": "10.0.0.1 50000 10.0.0.2 22",
+            "DISPLAY": "",
+            "WAYLAND_DISPLAY": "",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "fresh-headless"
+    assert "Open the Databricks login URL" in result.stderr
+    assert (state_dir / "login-browser.txt").read_text() == "none"
+
+
+def test_helper_reauth_failure_mentions_claude_slash_command(tmp_path):
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+    (home_dir / ".claude").mkdir(parents=True, exist_ok=True)
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "token-1.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-2.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "token-default.json").write_text('{"access_token": "", "expires_in": 0}')
+    (state_dir / "login-exit-code").write_text("1")
+
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+
+    assert result.returncode == 1
+    assert "/fmapi-codingagent-reauth" in result.stderr

@@ -105,17 +105,17 @@ setup-fmapi-claudecode doctor
 
 1. **Installs dependencies** &mdash; Claude Code, Databricks CLI, and jq. Skips anything already installed. Uses Homebrew on macOS, `apt-get`/`yum` and curl installers on Linux.
 
-2. **Authenticates with Databricks** &mdash; Establishes an OAuth session using `databricks auth token`. If no valid session exists, it opens your browser for OAuth login. Legacy PATs from prior installations are cleaned up automatically.
+2. **Authenticates with Databricks** &mdash; Checks your OAuth session and guides browser login when needed.
 
 3. **Writes `.claude/settings.json`** &mdash; Configures Claude Code to route API calls through your Databricks workspace, including model selection and the path to the token helper. If the file already exists, new values are merged in without overwriting other settings.
 
-4. **Creates an API key helper script** &mdash; Writes `fmapi-key-helper.sh` alongside the settings file. Claude Code invokes this automatically via the [`apiKeyHelper`](https://docs.anthropic.com/en/docs/claude-code/settings#available-settings) setting to obtain OAuth access tokens on demand.
+4. **Configures automatic token access** &mdash; Writes `fmapi-key-helper.sh` alongside the settings file so Claude Code can request tokens automatically.
 
-5. **Installs auth pre-check hooks** &mdash; Writes `fmapi-auth-precheck.sh` and registers it as both a `SubagentStart` and `UserPromptSubmit` hook in settings. These hooks run before each user prompt and subagent start to verify OAuth token validity and near-expiry freshness.
+5. **Runs a setup health check** &mdash; Verifies authentication and model reachability so setup is ready to use.
 
 6. **Prints a skills hint** &mdash; Shows how to install slash command skills via `setup-fmapi-claudecode install-skills`. See [Plugin Skills](#plugin-skills).
 
-7. **Runs a smoke test** &mdash; Verifies the helper script works and configured models are reachable.
+7. **Finishes with actionable output** &mdash; Shows next steps if anything needs attention.
 
 ### Managing Your Setup
 
@@ -154,7 +154,7 @@ Runs ten categories of checks, each reporting **PASS**, **FAIL**, **WARN**, or *
 - **Auth** &mdash; OAuth token is valid
 - **Connectivity** &mdash; HTTP reachability to the Databricks serving endpoints API. When AI Gateway v2 is configured, also tests gateway endpoint reachability
 - **Models** &mdash; all configured model names exist as endpoints and are READY
-- **Hooks** &mdash; SubagentStart and UserPromptSubmit pre-check hooks are configured and executable
+- **Runtime files** &mdash; helper and token-cache files are present and healthy
 
 Exits with code 1 if any checks fail.
 
@@ -292,7 +292,7 @@ Available skills:
 | `/fmapi-codingagent-status` | Check FMAPI configuration health &mdash; OAuth session, workspace, and model settings |
 | `/fmapi-codingagent-reauth` | Re-authenticate the Databricks OAuth session |
 | `/fmapi-codingagent-setup` | Run full FMAPI setup (interactive or non-interactive with CLI flags) |
-| `/fmapi-codingagent-doctor` | Run comprehensive diagnostics (dependencies, environment, config, auth, connectivity, models, hooks) |
+| `/fmapi-codingagent-doctor` | Run comprehensive diagnostics (dependencies, environment, config, auth, connectivity, and models) |
 | `/fmapi-codingagent-list-models` | List all serving endpoints available in the workspace |
 | `/fmapi-codingagent-validate-models` | Validate that configured models exist and are ready |
 
@@ -389,13 +389,11 @@ Global options:
 
 ### How It Works
 
-#### Token Management
-
-Claude Code invokes the helper script every 55 minutes by default (configurable via `--ttl`, max 60 minutes). The helper calls `databricks auth token`, which returns the current OAuth access token and automatically refreshes it using the stored refresh token. If the refresh token has expired due to extended inactivity, the helper falls back to `databricks auth login` to trigger browser-based re-authentication. The pre-check hook also runs on `UserPromptSubmit` and `SubagentStart` to validate token freshness before work begins. A 55-minute interval is recommended to avoid expiry edge cases in long sessions; values under 15 minutes are not recommended as they may cause failures during long-running subagent calls.
+FMAPI keeps Claude Code authenticated with Databricks automatically. By default, Claude checks for a fresh token every 55 minutes (configurable with `--ttl`, up to 60 minutes). If your login session has expired, run `setup-fmapi-claudecode reauth` (or `/fmapi-codingagent-reauth` inside Claude Code) and continue.
 
 ### Troubleshooting
 
-> **Not sure what's wrong?** Run `doctor` first &mdash; it checks dependencies, environment, config files, auth, connectivity, models, and hooks in one pass:
+> **Not sure what's wrong?** Run `doctor` first &mdash; it checks dependencies, environment, config files, auth, connectivity, and models in one pass:
 > ```bash
 > setup-fmapi-claudecode doctor
 > ```
@@ -414,20 +412,20 @@ Do not include a trailing slash or path segments.
 
 ---
 
-#### "apiKeyHelper failed" or token errors in Claude Code
+#### Token errors in Claude Code
 
-This means the helper script that supplies OAuth tokens is failing. To diagnose:
+If Claude shows token/authentication errors, use this quick recovery flow:
 
-1. Run the helper directly and check its output:
-   ```bash
-   sh ~/.claude/fmapi-key-helper.sh
-   ```
-2. If it prints an error about an expired or invalid token, re-authenticate:
+1. Re-authenticate:
    ```bash
    setup-fmapi-claudecode reauth
    ```
    Or use `/fmapi-codingagent-reauth` inside Claude Code.
-3. If the helper script is missing or outdated, run a lightweight refresh:
+2. Check current status:
+   ```bash
+   setup-fmapi-claudecode status
+   ```
+3. Refresh setup files:
    ```bash
    setup-fmapi-claudecode reinstall --refresh-only
    ```
@@ -444,9 +442,9 @@ This means the helper script that supplies OAuth tokens is failing. To diagnose:
 
 #### Databricks CLI error: `cache: load: parse: invalid character ...`
 
-This indicates a corrupted Databricks OAuth cache file (`~/.databricks/token-cache.json`).
+This usually means local Databricks CLI auth data is corrupted.
 
-The setup flow now auto-recovers by removing malformed cache data. If you still see this error, delete the cache file and retry:
+Re-authenticate first. If the error persists, run this recovery command and retry:
 
 ```bash
 rm -f ~/.databricks/token-cache.json

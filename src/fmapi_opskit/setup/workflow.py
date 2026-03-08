@@ -132,7 +132,7 @@ def do_setup(
         sys.exit(0)
 
     install_dependencies(adapter, platform_info)
-    authenticate(gather.host, gather.profile, platform_info)
+    authenticate(gather.host, gather.profile)
     cleanup_legacy_cache(gather.settings_file.rsplit(f"/{c.settings_dir}", 1)[0])
 
     # Resolve workspace ID for gateway

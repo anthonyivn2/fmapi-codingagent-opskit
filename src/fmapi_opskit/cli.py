@@ -213,7 +213,7 @@ def reauth() -> None:
     """Re-authenticate Databricks OAuth session."""
     from fmapi_opskit.commands.reauth import do_reauth
 
-    do_reauth(_get_adapter(), _get_platform())
+    do_reauth(_get_adapter())
 
 
 @app.command(name="list-models")

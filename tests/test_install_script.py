@@ -11,7 +11,7 @@ def _install_script_text() -> str:
 
 def test_install_script_uses_cache_busting_tool_install():
     script = _install_script_text()
-    assert "uv tool install \"$INSTALL_DIR\" --force --reinstall --no-cache" in script, (
+    assert 'uv tool install "$INSTALL_DIR" --force --reinstall --no-cache' in script, (
         "install.sh should force a fresh uv tool reinstall to avoid stale cached helper templates"
     )
 
@@ -28,6 +28,4 @@ def test_install_script_does_not_execute_setup_command():
 
 def test_install_script_does_not_offer_agent_flag():
     script = _install_script_text()
-    assert "--agent" not in script, (
-        "install.sh should not include an auto-run --agent mode"
-    )
+    assert "--agent" not in script, "install.sh should not include an auto-run --agent mode"
