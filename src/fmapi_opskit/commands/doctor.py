@@ -499,35 +499,38 @@ def _check_token_cache_file(console: Console, cache_file: Path, now: int) -> Non
 
     # v2 format: timestamp, profile, host, expiry_epoch, token
     if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
-        age = now - int(lines[0])
         expiry_epoch = int(lines[3]) if lines[3].isdigit() else 0
-        if expiry_epoch > 0 and (expiry_epoch - now) <= 300:
+        if expiry_epoch > 0:
+            remaining = expiry_epoch - now
+            if remaining <= 0:
+                console.print(
+                    f"  [warning]WARN[/warning]  Cached token expired  "
+                    f"[dim]{-remaining}s ago — will refresh on next use[/dim]"
+                )
+            elif remaining <= 300:
+                console.print(
+                    f"  [dim]INFO[/dim]  Token cache near expiry  "
+                    f"[dim]{remaining}s remaining — will refresh on next use[/dim]"
+                )
+            else:
+                console.print(
+                    f"  [success]PASS[/success]  Token cache is fresh  "
+                    f"[dim]{remaining}s remaining[/dim]"
+                )
+        else:
             console.print(
-                "  [dim]INFO[/dim]  Token cache near expiry  "
-                "[dim]Will be refreshed before next use[/dim]"
+                "  [success]PASS[/success]  Token cache present  "
+                "[dim]Expiry unknown[/dim]"
             )
-        _print_cache_age(console, age, label="")
     # Legacy format: timestamp, token
     elif len(lines) >= 2 and lines[0].isdigit() and lines[1]:
-        age = now - int(lines[0])
-        _print_cache_age(console, age, label=" (legacy format)")
+        console.print(
+            "  [success]PASS[/success]  Token cache present (legacy format)  "
+            "[dim]Expiry unknown[/dim]"
+        )
     else:
         console.print(
             f"  [warning]WARN[/warning]  Token cache is malformed  [dim]Fix: rm {cache_file}[/dim]"
-        )
-
-
-def _print_cache_age(console: Console, age: int, *, label: str) -> None:
-    """Print cache freshness status based on age."""
-    if age < 240:
-        console.print(
-            f"  [success]PASS[/success]  Token cache is fresh{label}  "
-            f"[dim]Age: {age}s (max 240s)[/dim]"
-        )
-    else:
-        console.print(
-            f"  [dim]INFO[/dim]  Token cache is stale{label}  "
-            f"[dim]Age: {age}s — will refresh on next use[/dim]"
         )
 
 

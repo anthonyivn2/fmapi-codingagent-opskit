@@ -20,8 +20,7 @@ fi
 _FMAPI_CACHE_DIR="${HOME}/.claude"
 _FMAPI_TOKEN_CACHE="${_FMAPI_CACHE_DIR}/.fmapi-token-cache"
 _FMAPI_TOKEN_LOCK="${_FMAPI_CACHE_DIR}/.fmapi-token-lock"
-_FMAPI_CACHE_MAX_AGE=240  # seconds — cache considered fresh if younger than this
-_EXPIRY_BUFFER_SECONDS=300  # seconds — avoid returning near-expiry tokens
+_EXPIRY_BUFFER_SECONDS=300  # seconds — force refresh when token expires within this window
 _REAUTH_TIMEOUT_SECONDS=180
 _REAUTH_POLL_INTERVAL_SECONDS=1
 _fmapi_last_expires_in=""
@@ -90,6 +89,13 @@ _is_expiring_soon() {
   [ "$_exp_in" -le "$_EXPIRY_BUFFER_SECONDS" ] 2>/dev/null
 }
 
+_clear_databricks_token_cache() {
+  _cache_file="$HOME/.databricks/token-cache.json"
+  if [ -f "$_cache_file" ]; then
+    rm -f "$_cache_file" >/dev/null 2>&1 || true
+  fi
+}
+
 _fetch_token() {
   _fmapi_last_expires_in=""
   _fmapi_last_token=""
@@ -98,14 +104,13 @@ _fetch_token() {
   _fmapi_last_expires_in=$(_get_expires_in_seconds "$_token_json")
 
   if [ -n "$_token" ] && _is_expiring_soon "$_fmapi_last_expires_in"; then
-    sleep 1
+    _clear_databricks_token_cache
     _token_json=$(_fetch_token_json)
-    _token=$(printf '%s' "$_token_json" | jq -r '.access_token // empty')
+    _new_token=$(printf '%s' "$_token_json" | jq -r '.access_token // empty')
     _fmapi_last_expires_in=$(_get_expires_in_seconds "$_token_json")
-  fi
-
-  if [ -n "$_token" ] && _is_expiring_soon "$_fmapi_last_expires_in"; then
-    return 0
+    if [ -n "$_new_token" ]; then
+      _token="$_new_token"
+    fi
   fi
 
   _fmapi_last_token="$_token"
@@ -147,14 +152,13 @@ _read_token_cache() {
   esac
   [ -z "$_cached_token" ] && return 0
 
-  _now=$(date +%s)
-  _age=$(( _now - _cached_ts ))
-  if [ "$_cached_expiry_epoch" -gt 0 ] && [ $(( _cached_expiry_epoch - _now )) -le "$_EXPIRY_BUFFER_SECONDS" ]; then
-    return 0
+  if [ "$_cached_expiry_epoch" -gt 0 ]; then
+    _now=$(date +%s)
+    if [ $(( _cached_expiry_epoch - _now )) -le "$_EXPIRY_BUFFER_SECONDS" ]; then
+      return 0
+    fi
   fi
-  if [ "$_age" -ge 0 ] && [ "$_age" -lt "$_FMAPI_CACHE_MAX_AGE" ]; then
-    printf '%s' "$_cached_token"
-  fi
+  printf '%s' "$_cached_token"
 }
 
 _write_token_cache() {
@@ -310,13 +314,6 @@ if _is_headless; then
 else
   _FMAPI_HEADLESS_REAUTH=false
 fi
-
-_clear_databricks_token_cache() {
-  _cache_file="$HOME/.databricks/token-cache.json"
-  if [ -f "$_cache_file" ]; then
-    rm -f "$_cache_file" >/dev/null 2>&1 || true
-  fi
-}
 
 _start_databricks_login() {
   _login_browser="$1"

@@ -15,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added JWT-only expiry handling for OAuth token freshness checks.
 - Reduced OAuth re-auth delay in helper flow.
 - Avoided annotated Git tag checkout warnings in installer tag installs.
+- Fixed `_fetch_token` discarding valid near-expiry tokens (caused 403 errors in Claude Code).
+- Fixed near-expiry token refresh to clear Databricks CLI token cache and force a real OAuth refresh.
 
 ### Changed
 
+- Replaced age-based token cache eviction (240s max-age) with expiry-based validation (300s buffer).
+- Updated `doctor` and `status` dashboard to report token freshness based on actual expiry instead of cache age.
 - Simplified auth, doctor, reauth, and test helper internals.
 
 ### Added

@@ -28,24 +28,18 @@ def _read_token_cache_status(cache_file: Path) -> tuple[str, str]:
 
     # v2 format: ts, profile, host, expiry_epoch, token
     if len(lines) >= 5 and lines[0].isdigit() and lines[4]:
-        age = now - int(lines[0])
         if lines[3].isdigit() and int(lines[3]) > 0:
             remaining = int(lines[3]) - now
             if remaining <= 0:
                 return "STALE", f"Cached token expired ({-remaining}s ago)"
             if remaining <= 300:
                 return "STALE", f"Cached token near expiry ({remaining}s remaining)"
-
-        if age < 240:
-            return "ACTIVE", f"Cached token (age: {age}s)"
-        return "STALE", f"Cached token stale (age: {age}s)"
+            return "ACTIVE", f"Cached token ({remaining}s remaining)"
+        return "ACTIVE", "Cached token (expiry unknown)"
 
     # Legacy format: ts, token
     if len(lines) >= 2 and lines[0].isdigit() and lines[1]:
-        age = now - int(lines[0])
-        if age < 240:
-            return "ACTIVE", f"Cached token (legacy format, age: {age}s)"
-        return "STALE", f"Cached token stale (legacy format, age: {age}s)"
+        return "ACTIVE", "Cached token (legacy format)"
 
     return "WARN", "Cache file is malformed"
 
