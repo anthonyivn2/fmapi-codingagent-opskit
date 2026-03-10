@@ -234,29 +234,6 @@ def test_clear_token_cache_deletes_cache_file(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# OAuth URL extraction tests
-# ---------------------------------------------------------------------------
-
-
-def test_extract_oauth_url_from_aws_output():
-    """URL extraction should work for AWS workspace OAuth URLs."""
-    text = (
-        "Opening https://dbc-abc123.cloud.databricks.com/oidc/v1/authorize?"
-        "client_id=databricks-cli&response_type=code&scope=all-apis"
-    )
-    url = auth._extract_oauth_url(text)
-    assert url is not None
-    assert "dbc-abc123.cloud.databricks.com/oidc/v1/authorize" in url
-
-
-def test_extract_oauth_url_returns_none_for_no_match():
-    """No URL should be extracted from text without an OAuth URL."""
-    assert auth._extract_oauth_url("Login successful!") is None
-    assert auth._extract_oauth_url("https://example.com/dashboard") is None
-    assert auth._extract_oauth_url("") is None
-
-
-# ---------------------------------------------------------------------------
 # Polling tests
 # ---------------------------------------------------------------------------
 
@@ -291,21 +268,15 @@ def test_poll_for_token_returns_false_on_timeout(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_auth_login_extracts_url_and_polls(tmp_path, monkeypatch):
-    """auth_login should extract URL from Popen output and poll for token."""
+def test_auth_login_polls_for_token_without_oauth_url_display(tmp_path, monkeypatch):
+    """auth_login should poll token availability without URL extraction/display."""
     _patch_home(monkeypatch, tmp_path)
 
-    displayed_urls: list[str] = []
     poll_called = {"called": False}
-
-    oauth_url = (
-        "https://dbc-test.cloud.databricks.com/oidc/v1/authorize?"
-        "client_id=databricks-cli&response_type=code"
-    )
 
     class FakePopen:
         def __init__(self, *args, **kwargs):
-            self.stdout = iter([f"Opening {oauth_url}\n"])
+            self.stdout = iter([])
             self.stderr = iter([])
             self.returncode = None
 
@@ -323,13 +294,9 @@ def test_auth_login_extracts_url_and_polls(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
 
-    def fake_display(url: str) -> None:
-        displayed_urls.append(url)
-
-    monkeypatch.setattr(auth, "_display_oauth_url", fake_display)
-
-    def fake_poll_for_token(profile: str, timeout: int = 300) -> bool:
+    def fake_poll_for_token(profile: str, timeout: int = 300, *, stop_when=None) -> bool:
         poll_called["called"] = True
+        assert callable(stop_when)
         return True
 
     monkeypatch.setattr(auth, "_poll_for_token", fake_poll_for_token)
@@ -337,6 +304,4 @@ def test_auth_login_extracts_url_and_polls(tmp_path, monkeypatch):
     ok = auth.auth_login("https://dbc-test.cloud.databricks.com", "test-profile")
 
     assert ok is True
-    assert len(displayed_urls) == 1
-    assert "dbc-test.cloud.databricks.com/oidc/v1/authorize" in displayed_urls[0]
     assert poll_called["called"] is True

@@ -317,7 +317,7 @@ def _doctor_auth(cfg: FmapiConfig, pinfo: PlatformInfo) -> bool:
     if pinfo.is_headless:
         console.print(
             "  [warning]INFO[/warning]  Headless SSH session detected -- "
-            "auto-open browser is unavailable; reauth uses URL copy/paste"
+            "auto-open browser may be unavailable; reauth may require manual browser auth"
         )
 
     console.print()

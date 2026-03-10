@@ -172,7 +172,6 @@ _stop_login_process() {
   fi
 
   kill "$_pid" 2>/dev/null || true
-  sleep 1
   if kill -0 "$_pid" 2>/dev/null; then
     kill -9 "$_pid" 2>/dev/null || true
   fi
@@ -184,7 +183,6 @@ _auto_reauth_and_emit_token() {
 
   env -u DATABRICKS_TOKEN -u DATABRICKS_HOST -u DATABRICKS_AUTH_TYPE \
     -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET \
-    BROWSER="none" \
     databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2 &
   _login_pid=$!
 
@@ -237,6 +235,6 @@ if [ -n "$token" ]; then
 fi
 
 echo "FMAPI: OAuth session expired. Re-authenticate manually:" >&2
-echo "FMAPI:   BROWSER=none databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
+echo "FMAPI:   databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
 echo "FMAPI: In Claude Code, run /fmapi-codingagent-reauth" >&2
 exit 1

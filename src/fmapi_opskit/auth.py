@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -15,13 +14,12 @@ from base64 import urlsafe_b64decode
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 # ---------------------------------------------------------------------------
-# OAuth URL extraction and polling constants
+# OAuth polling constants
 # ---------------------------------------------------------------------------
 
-_OAUTH_URL_PATTERN = re.compile(r"(https://\S+(?:/oidc/(?:v1/)?authorize|/authorize)\S*)")
-_URL_READ_TIMEOUT = 30  # seconds to wait for URL in CLI output
 _POLL_TIMEOUT = 300  # seconds to poll for token (5 min)
 _POLL_INTERVAL = 3  # seconds between poll attempts
 _TOKEN_MIN_VALIDITY_SECONDS = 300
@@ -95,33 +93,6 @@ def run_databricks_json(*args: str, profile: str | None = None) -> dict | list |
         return None
 
 
-def _extract_oauth_url(text: str) -> str | None:
-    """Extract an OAuth authorization URL from CLI output text."""
-    match = _OAUTH_URL_PATTERN.search(text)
-    return match.group(1) if match else None
-
-
-def _display_oauth_url(url: str) -> None:
-    """Display the OAuth URL prominently using a Rich Panel."""
-    from rich.panel import Panel
-
-    from fmapi_opskit.ui.console import get_console
-
-    console = get_console()
-    console.print()
-    console.print(
-        Panel(
-            f"[bold]{url}[/bold]\n\n"
-            "[dim]Open this URL in any browser to authenticate.\n"
-            "Tip: If on SSH, open it from your local machine and keep this command running.[/dim]",
-            title="[info]OAuth Login URL[/info]",
-            border_style="info",
-            padding=(1, 2),
-        )
-    )
-    console.print()
-
-
 def _read_stream_lines(stream: object, lines: list[str]) -> None:
     """Thread target: read a stream line-by-line into a list."""
     try:
@@ -131,7 +102,12 @@ def _read_stream_lines(stream: object, lines: list[str]) -> None:
         pass
 
 
-def _poll_for_token(profile: str, timeout: int = _POLL_TIMEOUT) -> bool:
+def _poll_for_token(
+    profile: str,
+    timeout: int = _POLL_TIMEOUT,
+    *,
+    stop_when: Callable[[], bool] | None = None,
+) -> bool:
     """Poll `databricks auth token` until a valid token appears or timeout.
 
     Returns True when a token is found, False on timeout.
@@ -140,6 +116,9 @@ def _poll_for_token(profile: str, timeout: int = _POLL_TIMEOUT) -> bool:
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if stop_when and stop_when():
+            return False
+
         token = get_oauth_token(profile)
         if token:
             log.debug("poll_for_token: token acquired")
@@ -162,11 +141,10 @@ def _terminate_process(proc: subprocess.Popen) -> None:  # type: ignore[type-arg
 
 
 def _start_auth_login_process(host: str, profile: str) -> subprocess.Popen | None:  # type: ignore[type-arg]
-    """Start `databricks auth login` in URL-print mode."""
+    """Start `databricks auth login` as a background process."""
     from fmapi_opskit.ui import logging as log
 
     cmd = ["databricks", "auth", "login", "--host", host, "--profile", profile]
-    env = {**os.environ, "BROWSER": "none"}
 
     try:
         return subprocess.Popen(
@@ -175,7 +153,7 @@ def _start_auth_login_process(host: str, profile: str) -> subprocess.Popen | Non
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             text=True,
-            env=env,
+            env=os.environ.copy(),
         )
     except FileNotFoundError:
         log.error("databricks CLI not found.")
@@ -201,30 +179,6 @@ def _start_auth_login_readers(
     return stdout_lines, stderr_lines, stdout_thread, stderr_thread
 
 
-def _wait_for_oauth_url(
-    proc: subprocess.Popen,  # type: ignore[type-arg]
-    stdout_lines: list[str],
-    stderr_lines: list[str],
-    timeout: int = _URL_READ_TIMEOUT,
-) -> str | None:
-    """Wait briefly for an OAuth URL to appear in process output."""
-    url_found: str | None = None
-    deadline = time.monotonic() + timeout
-
-    while time.monotonic() < deadline:
-        for line in stdout_lines + stderr_lines:
-            url_found = _extract_oauth_url(line)
-            if url_found:
-                return url_found
-
-        if proc.poll() is not None:
-            return None
-
-        time.sleep(0.3)
-
-    return None
-
-
 def _collect_auth_login_result(
     proc: subprocess.Popen,  # type: ignore[type-arg]
     stdout_thread: threading.Thread,
@@ -239,12 +193,7 @@ def _collect_auth_login_result(
 
 
 def auth_login(host: str, profile: str) -> bool:
-    """Run databricks auth login with URL display and auto-polling.
-
-    Launches ``databricks auth login`` as a background process with
-    ``BROWSER=none`` to suppress auto-open and force URL printing.
-    Extracts the OAuth URL from output, displays it prominently, then
-    polls ``databricks auth token`` until authentication completes.
+    """Run databricks auth login and poll until token is available.
 
     Returns True if a valid token was obtained.
     """
@@ -257,20 +206,23 @@ def auth_login(host: str, profile: str) -> bool:
         return False
 
     stdout_lines, stderr_lines, stdout_thread, stderr_thread = _start_auth_login_readers(proc)
-    url_found = _wait_for_oauth_url(proc, stdout_lines, stderr_lines)
 
-    if url_found:
-        _display_oauth_url(url_found)
-        log.info("Waiting for authentication to complete ...")
-        success = _poll_for_token(profile)
+    success = _poll_for_token(
+        profile,
+        stop_when=lambda: proc.poll() is not None,
+    )
+    if success:
         _terminate_process(proc)
-        return success
+        return True
+
+    if proc.poll() is None:
+        _terminate_process(proc)
 
     completed_ok, all_stderr = _collect_auth_login_result(
         proc, stdout_thread, stderr_thread, stderr_lines
     )
     if completed_ok:
-        return True
+        return bool(get_oauth_token(profile))
 
     if all_stderr:
         log.debug(f"auth_login stderr: {all_stderr}")
@@ -322,8 +274,7 @@ def check_oauth_status(profile: str) -> bool:
 def authenticate(host: str, profile: str) -> None:
     """Run the OAuth authentication flow.
 
-    URL display and auto-polling are handled inside ``auth_login()``,
-    so no platform-specific warnings are needed here.
+    Login orchestration and token polling are handled inside ``auth_login()``.
     """
     from fmapi_opskit.ui import logging as log
 
