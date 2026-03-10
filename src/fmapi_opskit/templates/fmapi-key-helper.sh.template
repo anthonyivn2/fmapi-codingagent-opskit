@@ -55,7 +55,11 @@ _get_jwt_exp() {
 _get_token_time_left() {
   _ttl_json="$1"
 
-  _ttl_ei=$(printf '%s' "$_ttl_json" | jq -r '.expires_in // .expiresIn // empty' 2>/dev/null) || true
+  _ttl_ei=$(printf '%s' "$_ttl_json" | jq -r '
+    (.expires_in // .expiresIn // empty)
+    | tonumber?
+    | if . == null then empty else floor end
+  ' 2>/dev/null) || true
   if [ -n "$_ttl_ei" ]; then
     printf '%s' "$_ttl_ei"
     return 0
