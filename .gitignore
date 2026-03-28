@@ -17,3 +17,6 @@ build/
 .ruff_cache/
 htmlcov/
 .coverage
+
+# Worktrees
+.worktrees/
