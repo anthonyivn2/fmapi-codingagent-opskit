@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-FMAPI_PROFILE="__PROFILE__"
-FMAPI_HOST="__HOST__"
+FMAPI_PROFILE='__PROFILE__'
+FMAPI_HOST='__HOST__'
 
 # Verify required commands exist
 for _cmd in databricks jq; do
@@ -239,6 +239,6 @@ if [ -n "$token" ]; then
 fi
 
 echo "FMAPI: OAuth session expired. Re-authenticate manually:" >&2
-echo "FMAPI:   databricks auth login --host $FMAPI_HOST --profile $FMAPI_PROFILE" >&2
+echo "FMAPI:   databricks auth login --host '$FMAPI_HOST' --profile '$FMAPI_PROFILE'" >&2
 echo "FMAPI: In Claude Code, run /fmapi-codingagent-reauth" >&2
 exit 1

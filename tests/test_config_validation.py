@@ -107,3 +107,48 @@ def test_load_version_omitted_accepted(tmp_path):
     assert cfg.host == "https://example.com", (
         f"Expected host parsed without version, got '{cfg.host}'"
     )
+
+
+# --- Host character validation (command injection defense) ---
+
+
+def test_load_host_with_command_substitution_raises(tmp_path):
+    p = tmp_path / "inject_cmd.json"
+    p.write_text(json.dumps({"host": "https://evil.com$(id)"}))
+    with pytest.raises(ConfigError, match="invalid characters"):
+        load_config_file(str(p))
+
+
+def test_load_host_with_backtick_injection_raises(tmp_path):
+    p = tmp_path / "inject_bt.json"
+    p.write_text(json.dumps({"host": "https://evil.com`id`"}))
+    with pytest.raises(ConfigError, match="invalid characters"):
+        load_config_file(str(p))
+
+
+def test_load_host_with_semicolon_raises(tmp_path):
+    p = tmp_path / "inject_semi.json"
+    p.write_text(json.dumps({"host": "https://evil.com;rm -rf /"}))
+    with pytest.raises(ConfigError, match="invalid characters"):
+        load_config_file(str(p))
+
+
+def test_load_host_with_pipe_raises(tmp_path):
+    p = tmp_path / "inject_pipe.json"
+    p.write_text(json.dumps({"host": "https://evil.com|cat /etc/passwd"}))
+    with pytest.raises(ConfigError, match="invalid characters"):
+        load_config_file(str(p))
+
+
+def test_load_valid_host_accepted(tmp_path):
+    p = tmp_path / "valid_host.json"
+    p.write_text(json.dumps({"host": "https://workspace.cloud.databricks.com"}))
+    cfg = load_config_file(str(p))
+    assert cfg.host == "https://workspace.cloud.databricks.com"
+
+
+def test_load_host_with_port_accepted(tmp_path):
+    p = tmp_path / "host_port.json"
+    p.write_text(json.dumps({"host": "https://workspace.cloud.databricks.com:443"}))
+    cfg = load_config_file(str(p))
+    assert cfg.host == "https://workspace.cloud.databricks.com:443"

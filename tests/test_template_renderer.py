@@ -64,3 +64,20 @@ def test_multiple_occurrences_replaced(tmp_path):
         f"Expected 'value' to appear exactly 2 times, got {content.count('value')} in: {content}"
     )
     assert "__TOKEN__" not in content, f"Placeholder __TOKEN__ should be fully replaced: {content}"
+
+
+def test_host_placeholder_in_single_quotes(tmp_path):
+    """Verify template uses single quotes around HOST to prevent shell expansion."""
+    tpl = _make_template(
+        tmp_path,
+        "FMAPI_HOST='__HOST__'\nFMAPI_PROFILE='__PROFILE__'",
+    )
+    out = tmp_path / "helper.sh"
+    render_template(tpl, out, {"HOST": "https://workspace.databricks.com", "PROFILE": "default"})
+    content = out.read_text()
+    assert "FMAPI_HOST='https://workspace.databricks.com'" in content, (
+        f"HOST should be inside single quotes, got: {content}"
+    )
+    assert "FMAPI_PROFILE='default'" in content, (
+        f"PROFILE should be inside single quotes, got: {content}"
+    )
