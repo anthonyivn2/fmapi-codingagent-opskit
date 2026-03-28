@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +93,12 @@ def gather_config_pre_auth(
     if not result.host.startswith("https://"):
         log.error("Workspace URL must start with https://")
         sys.exit(1)
+    if not re.match(r"^https://[a-zA-Z0-9._:/-]+$", result.host):
+        log.error(
+            "Workspace URL contains invalid characters. "
+            "Only letters, numbers, dots, hyphens, underscores, colons, and slashes are allowed."
+        )
+        sys.exit(1)
 
     # API routing mode
     default_gw = _first_non_empty(cli_ai_gateway, file_cfg.ai_gateway, cfg.ai_gateway, "false")
@@ -131,8 +138,6 @@ def gather_config_pre_auth(
     if not result.profile:
         log.error("Profile name is required.")
         sys.exit(1)
-    import re
-
     if not re.match(r"^[a-zA-Z0-9_-]+$", result.profile):
         log.error(
             f"Invalid profile name: '{result.profile}'. "

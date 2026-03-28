@@ -14,6 +14,9 @@ class ConfigError(Exception):
     """Raised when config file validation fails."""
 
 
+_HOST_PATTERN = re.compile(r"^https://[a-zA-Z0-9._:/-]+$")
+
+
 def load_config_file(path: str | Path) -> FileConfig:
     """Load and validate a local JSON config file."""
     p = Path(path)
@@ -73,6 +76,12 @@ def _validate_and_parse(data: dict) -> FileConfig:
     if host:
         if not host.startswith("https://"):
             raise ConfigError(f"Config file: host must start with https://. Got: {host}")
+        if not _HOST_PATTERN.match(host):
+            raise ConfigError(
+                "Config file: host contains invalid characters. "
+                "Only letters, numbers, dots, hyphens, underscores, "
+                "colons, and slashes are allowed."
+            )
         cfg.host = host.rstrip("/")
 
     # profile
