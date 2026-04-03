@@ -45,36 +45,10 @@ def do_uninstall(adapter: AgentAdapter) -> None:
         if abs_path in settings_files:
             continue
 
-        try:
-            settings = json.loads(Path(abs_path).read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-
-        has_fmapi = False
-
-        # apiKeyHelper
-        helper = settings.get("apiKeyHelper", "")
-        if helper:
-            has_fmapi = True
-            if Path(helper).is_file() and helper not in helper_scripts:
-                helper_scripts.append(helper)
-
-        # FMAPI hooks
-        hooks = settings.get("hooks", {})
-        for hook_type in ("SubagentStart", "UserPromptSubmit"):
-            for entry in hooks.get(hook_type, []):
-                if is_fmapi_hook_entry(entry):
-                    for hook in entry.get("hooks", []):
-                        cmd = hook.get("command", "")
-                        if cmd and Path(cmd).is_file() and cmd not in hook_scripts:
-                            hook_scripts.append(cmd)
-
-        # Legacy _fmapi_meta
-        if "_fmapi_meta" in settings:
-            has_fmapi = True
-
-        if has_fmapi:
-            settings_files.append(abs_path)
+        if abs_path.endswith(".toml"):
+            _scan_toml_for_fmapi(abs_path, settings_files, helper_scripts)
+        else:
+            _scan_json_for_fmapi(abs_path, settings_files, helper_scripts, hook_scripts)
 
     # Early exit if nothing found
     has_install_dir = default_install_dir.is_dir()
@@ -146,30 +120,10 @@ def do_uninstall(adapter: AgentAdapter) -> None:
 
     # Clean settings files
     for sf in settings_files:
-        mgr = SettingsManager(Path(sf))
-        settings = mgr.read()
-
-        # Remove env keys
-        env = settings.get("env", {})
-        for key in c.uninstall_env_keys:
-            env.pop(key, None)
-        if not env:
-            settings.pop("env", None)
+        if sf.endswith(".toml"):
+            _clean_toml_settings(sf)
         else:
-            settings["env"] = env
-
-        settings.pop("_fmapi_meta", None)
-        settings.pop("apiKeyHelper", None)
-
-        # Remove hooks
-        remove_fmapi_hooks(settings)
-
-        if not settings:
-            Path(sf).unlink(missing_ok=True)
-            log.success(f"Deleted {sf} (no remaining settings).")
-        else:
-            mgr.write(settings)
-            log.success(f"Cleaned FMAPI keys from {sf} (preserved other settings).")
+            _clean_json_settings(sf, c, remove_fmapi_hooks)
 
     # Remove install directory
     if has_install_dir:
@@ -180,3 +134,109 @@ def do_uninstall(adapter: AgentAdapter) -> None:
     log.info(
         "To fully remove the CLI tool, run: [info]uv tool uninstall fmapi-codingagent-opskit[/info]"
     )
+
+
+def _scan_json_for_fmapi(
+    abs_path: str,
+    settings_files: list[str],
+    helper_scripts: list[str],
+    hook_scripts: list[str],
+) -> None:
+    """Scan a JSON settings file for FMAPI artifacts."""
+    try:
+        settings = json.loads(Path(abs_path).read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    has_fmapi = False
+
+    # apiKeyHelper
+    helper = settings.get("apiKeyHelper", "")
+    if helper:
+        has_fmapi = True
+        if Path(helper).is_file() and helper not in helper_scripts:
+            helper_scripts.append(helper)
+
+    # FMAPI hooks
+    hooks = settings.get("hooks", {})
+    for hook_type in ("SubagentStart", "UserPromptSubmit"):
+        for entry in hooks.get(hook_type, []):
+            if is_fmapi_hook_entry(entry):
+                for hook in entry.get("hooks", []):
+                    cmd = hook.get("command", "")
+                    if cmd and Path(cmd).is_file() and cmd not in hook_scripts:
+                        hook_scripts.append(cmd)
+
+    # Legacy _fmapi_meta
+    if "_fmapi_meta" in settings:
+        has_fmapi = True
+
+    if has_fmapi:
+        settings_files.append(abs_path)
+
+
+def _scan_toml_for_fmapi(
+    abs_path: str,
+    settings_files: list[str],
+    helper_scripts: list[str],
+) -> None:
+    """Scan a TOML config file for FMAPI artifacts."""
+    try:
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib  # type: ignore[no-redef]
+
+        data = tomllib.loads(Path(abs_path).read_text())
+    except Exception:
+        return
+
+    providers = data.get("model_providers", {})
+    for provider in providers.values():
+        auth = provider.get("auth", {})
+        command = auth.get("command", "")
+        if command and "fmapi-key-helper" in command:
+            settings_files.append(abs_path)
+            if Path(command).is_file() and command not in helper_scripts:
+                helper_scripts.append(command)
+            break
+
+
+def _clean_json_settings(sf: str, c, remove_fmapi_hooks_fn) -> None:
+    """Remove FMAPI keys from a JSON settings file."""
+    mgr = SettingsManager(Path(sf))
+    settings = mgr.read()
+
+    # Remove env keys
+    env = settings.get("env", {})
+    for key in c.uninstall_env_keys:
+        env.pop(key, None)
+    if not env:
+        settings.pop("env", None)
+    else:
+        settings["env"] = env
+
+    settings.pop("_fmapi_meta", None)
+    settings.pop("apiKeyHelper", None)
+
+    # Remove hooks
+    remove_fmapi_hooks_fn(settings)
+
+    if not settings:
+        Path(sf).unlink(missing_ok=True)
+        log.success(f"Deleted {sf} (no remaining settings).")
+    else:
+        mgr.write(settings)
+        log.success(f"Cleaned FMAPI keys from {sf} (preserved other settings).")
+
+
+def _clean_toml_settings(sf: str) -> None:
+    """Remove FMAPI provider from a TOML config file."""
+    from fmapi_opskit.settings.toml_manager import TomlSettingsManager
+
+    mgr = TomlSettingsManager(Path(sf))
+    deleted = mgr.remove_fmapi_provider()
+    if deleted:
+        log.success(f"Deleted {sf} (no remaining settings).")
+    else:
+        log.success(f"Cleaned FMAPI provider from {sf} (preserved other settings).")

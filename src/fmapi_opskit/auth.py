@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -9,12 +10,11 @@ import subprocess
 import sys
 import threading
 import time
-import contextlib
 from base64 import urlsafe_b64decode
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable
 
 # ---------------------------------------------------------------------------
 # OAuth polling constants
@@ -442,7 +442,9 @@ def _force_refresh_databricks_token_cache() -> bool:
     if not isinstance(payload, dict):
         return False
 
-    past = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000000000Z")
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000000000Z"
+    )
     updated = False
     for key in ("Tokens", "tokens"):
         entries = payload.get(key)

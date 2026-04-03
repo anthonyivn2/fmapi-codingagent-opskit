@@ -304,27 +304,31 @@ def gather_config_models(
         non_interactive,
         normalized_models,
     )
-    result.opus = _prompt_model_value(
-        "Opus model",
-        cli_opus,
-        gather.default_opus,
-        non_interactive,
-        normalized_models,
-    )
-    result.sonnet = _prompt_model_value(
-        "Sonnet model",
-        cli_sonnet,
-        gather.default_sonnet,
-        non_interactive,
-        normalized_models,
-    )
-    result.haiku = _prompt_model_value(
-        "Haiku model",
-        cli_haiku,
-        gather.default_haiku,
-        non_interactive,
-        normalized_models,
-    )
+
+    # Only prompt for model tiers if the adapter supports them
+    # (e.g., Claude Code has opus/sonnet/haiku; Codex has a single model)
+    if gather.default_opus:
+        result.opus = _prompt_model_value(
+            "Opus model",
+            cli_opus,
+            gather.default_opus,
+            non_interactive,
+            normalized_models,
+        )
+        result.sonnet = _prompt_model_value(
+            "Sonnet model",
+            cli_sonnet,
+            gather.default_sonnet,
+            non_interactive,
+            normalized_models,
+        )
+        result.haiku = _prompt_model_value(
+            "Haiku model",
+            cli_haiku,
+            gather.default_haiku,
+            non_interactive,
+            normalized_models,
+        )
 
     log.debug(
         f"models: model={result.model} opus={result.opus} "

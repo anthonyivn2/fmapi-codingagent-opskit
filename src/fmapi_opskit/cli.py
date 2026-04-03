@@ -1,4 +1,4 @@
-"""Typer CLI app — entry point for setup-fmapi-claudecode."""
+"""Typer CLI app — entry point for setup-fmapi-{claudecode,codex}."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import Annotated
 
 import typer
 
-from fmapi_opskit.agents.claudecode import ClaudeCodeAdapter
 from fmapi_opskit.config.loader import (
     ConfigError,
     FileConfig,
@@ -18,9 +17,25 @@ from fmapi_opskit.config.loader import (
 from fmapi_opskit.core import detect_platform, find_clone_dir, get_version
 from fmapi_opskit.ui.console import init_console
 
+_AGENT_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
+
+
+def _detect_agent_id() -> str:
+    """Detect agent from entry point name (e.g. setup-fmapi-codex -> codex)."""
+    exe = Path(sys.argv[0]).stem if sys.argv else ""
+    if "codex" in exe.lower():
+        return "codex"
+    return "claudecode"
+
+
+_AGENT_ID = _detect_agent_id()
+
 app = typer.Typer(
-    name="setup-fmapi-claudecode",
-    help="Configure Claude Code to use Databricks Foundation Model API (FMAPI).",
+    name=f"setup-fmapi-{_AGENT_ID}",
+    help=(
+        f"Configure {_AGENT_NAMES.get(_AGENT_ID, 'coding agent')} "
+        "to use Databricks Foundation Model API (FMAPI)."
+    ),
     invoke_without_command=True,
     no_args_is_help=False,
     add_completion=False,
@@ -30,8 +45,19 @@ app = typer.Typer(
 _state: dict = {}
 
 
-def _get_adapter() -> ClaudeCodeAdapter:
-    return _state.get("adapter") or ClaudeCodeAdapter()
+def _create_adapter():
+    """Create the appropriate adapter based on the detected agent ID."""
+    if _AGENT_ID == "codex":
+        from fmapi_opskit.agents.codex import CodexAdapter
+
+        return CodexAdapter()
+    from fmapi_opskit.agents.claudecode import ClaudeCodeAdapter
+
+    return ClaudeCodeAdapter()
+
+
+def _get_adapter():
+    return _state.get("adapter") or _create_adapter()
 
 
 def _get_platform():
@@ -98,7 +124,7 @@ def main(
         typer.Option("--config-url", help="Load config from a remote JSON URL."),
     ] = None,
 ) -> None:
-    """Configure Claude Code to use Databricks Foundation Model API."""
+    """Configure a coding agent to use Databricks Foundation Model API."""
     # Validation: mutually exclusive flags
     if verbose and quiet:
         typer.echo("Error: --verbose and --quiet are mutually exclusive.", err=True)
@@ -128,7 +154,7 @@ def main(
     init_console(no_color=no_color, quiet=quiet, verbose=verbose)
 
     # Initialize adapter and platform
-    adapter = ClaudeCodeAdapter()
+    adapter = _create_adapter()
     platform_info = detect_platform()
 
     # Load config file if specified

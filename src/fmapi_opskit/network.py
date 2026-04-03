@@ -81,14 +81,22 @@ def validate_model(endpoints: list[dict], model_name: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def build_base_url(host: str, gateway_enabled: bool, workspace_id: str) -> str:
-    """Build the Anthropic base URL.
+def build_base_url(
+    host: str,
+    gateway_enabled: bool,
+    workspace_id: str,
+    base_url_suffix: str = "/serving-endpoints/anthropic",
+) -> str:
+    """Build the agent base URL.
 
     Returns the gateway URL when enabled, otherwise the serving-endpoints URL.
+    The suffix determines the provider path (e.g. /anthropic, /openai/v1).
     """
     if gateway_enabled and workspace_id:
-        return f"https://{workspace_id}.ai-gateway.cloud.databricks.com/anthropic"
-    return f"{host}/serving-endpoints/anthropic"
+        # Extract provider path from suffix: /serving-endpoints/anthropic -> /anthropic
+        provider_path = base_url_suffix.replace("/serving-endpoints", "", 1)
+        return f"https://{workspace_id}.ai-gateway.cloud.databricks.com{provider_path}"
+    return f"{host}{base_url_suffix}"
 
 
 def detect_workspace_id(profile: str, host: str) -> str:

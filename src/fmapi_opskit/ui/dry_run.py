@@ -53,9 +53,10 @@ def display_dry_run_plan(
     if ai_gateway_enabled:
         dry_ws_id = pending_workspace_id or "<to be detected>"
         if dry_ws_id != "<to be detected>":
-            dry_base_url = build_base_url(host, True, dry_ws_id)
+            dry_base_url = build_base_url(host, True, dry_ws_id, c.base_url_suffix)
         else:
-            dry_base_url = "https://<workspace-id>.ai-gateway.cloud.databricks.com/anthropic"
+            provider_path = c.base_url_suffix.replace("/serving-endpoints", "", 1)
+            dry_base_url = f"https://<workspace-id>.ai-gateway.cloud.databricks.com{provider_path}"
         console.print("  [info]::[/info]  Mode: [bold]AI Gateway v2 (beta)[/bold]")
         console.print(f"  [info]::[/info]  Workspace ID: [bold]{dry_ws_id}[/bold]")
         console.print(f"  [info]::[/info]  Base URL: [bold]{dry_base_url}[/bold]")
@@ -66,9 +67,9 @@ def display_dry_run_plan(
     # Settings
     if ai_gateway_enabled:
         ws_id_for_url = pending_workspace_id or "<workspace-id>"
-        dry_run_base_url = build_base_url(host, True, ws_id_for_url)
+        dry_run_base_url = build_base_url(host, True, ws_id_for_url, c.base_url_suffix)
     else:
-        dry_run_base_url = build_base_url(host, False, "")
+        dry_run_base_url = build_base_url(host, False, "", c.base_url_suffix)
 
     console.print("  [bold]Settings[/bold]")
     console.print(f"  [info]::[/info]  Settings file: [bold]{settings_file}[/bold]")

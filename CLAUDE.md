@@ -19,12 +19,14 @@ src/fmapi_opskit/
   agents/
     base.py                                        # AgentConfig dataclass + AgentAdapter Protocol
     claudecode.py                                  # ClaudeCodeAdapter implementation
+    codex.py                                       # CodexAdapter implementation (TOML-based config)
   config/
     models.py                                      # FmapiConfig dataclass, VALID_CONFIG_KEYS
     discovery.py                                   # discover_config: search settings, parse helper, read env
     loader.py                                      # load_config_file, load_config_url with validation
   settings/
     manager.py                                     # SettingsManager: read/write/merge settings.json
+    toml_manager.py                                # TomlSettingsManager: read/write/merge config.toml
     hooks.py                                       # Hook merge/cleanup/uninstall logic
   commands/
     _common.py                                     # Shared command preamble helpers
@@ -84,7 +86,7 @@ CLAUDE.md                                          # This file
 | Agent | Adapter | Status |
 |---|---|---|
 | Claude Code | `agents/claudecode.py` | Implemented |
-| OpenAI Codex | — | Planned |
+| OpenAI Codex | `agents/codex.py` | Implemented |
 | Gemini CLI | — | Planned |
 
 ## Plugin Skills
@@ -115,18 +117,21 @@ Skills are installed on demand via `setup-fmapi-claudecode install-skills` and r
 
 ## CLI Commands
 
+Both `setup-fmapi-claudecode` and `setup-fmapi-codex` share the same CLI codebase. The agent is detected from the entry point name (`sys.argv[0]`).
+
 ```
-setup-fmapi-claudecode [GLOBAL FLAGS] [SETUP FLAGS]     # runs setup (default)
-setup-fmapi-claudecode status                            # health dashboard
-setup-fmapi-claudecode doctor                            # diagnostics
-setup-fmapi-claudecode reauth                            # OAuth refresh
-setup-fmapi-claudecode list-models                       # endpoint table
-setup-fmapi-claudecode validate-models                   # model validation
-setup-fmapi-claudecode uninstall                         # cleanup (excludes skills)
-setup-fmapi-claudecode install-skills                    # install slash command skills
-setup-fmapi-claudecode uninstall-skills                  # remove slash command skills
-setup-fmapi-claudecode self-update                       # git pull + reinstall
-setup-fmapi-claudecode reinstall                         # rerun with saved config
+setup-fmapi-claudecode [GLOBAL FLAGS] [SETUP FLAGS]     # Claude Code setup (default)
+setup-fmapi-codex [GLOBAL FLAGS] [SETUP FLAGS]           # Codex setup (TOML-based)
+setup-fmapi-{agent} status                               # health dashboard
+setup-fmapi-{agent} doctor                               # diagnostics
+setup-fmapi-{agent} reauth                               # OAuth refresh
+setup-fmapi-{agent} list-models                          # endpoint table
+setup-fmapi-{agent} validate-models                      # model validation
+setup-fmapi-{agent} uninstall                            # cleanup
+setup-fmapi-{agent} install-skills                       # install slash command skills (Claude only)
+setup-fmapi-{agent} uninstall-skills                     # remove slash command skills (Claude only)
+setup-fmapi-{agent} self-update                          # git pull + reinstall
+setup-fmapi-{agent} reinstall                            # rerun with saved config
 ```
 
 ### Global Flags
@@ -160,6 +165,14 @@ setup-fmapi-claudecode reinstall                         # rerun with saved conf
 - `remove_fmapi_keys(uninstall_keys)` — clean uninstall, returns bool for file deletion
 - Atomic writes: write to `.tmp` then `Path.rename()`, `chmod 0o600`
 
+### TOML Settings Manager
+
+- `TomlSettingsManager(path: Path)` — read/write/merge config.toml for Codex
+- `merge_provider(provider_id, provider_name, base_url, wire_api, auth_command, ...)` — inject FMAPI provider block
+- `remove_fmapi_provider(provider_id)` — clean uninstall, returns bool for file deletion
+- Uses `tomllib`/`tomli` for reading, `tomli_w` for writing
+- Same atomic write pattern as SettingsManager
+
 ### Hook Logic (`settings/hooks.py`)
 
 - `is_fmapi_hook_entry(entry)` — regex match on `fmapi-auth-precheck|fmapi-subagent-precheck`
@@ -189,7 +202,7 @@ setup-fmapi-claudecode reinstall                         # rerun with saved conf
 - **Never commit** `.claude/settings.json`, `fmapi-key-helper.sh`, or other files containing tokens.
 - Use type hints for all function parameters and return values.
 - Follow Ruff lint rules: `E`, `F`, `W`, `I`, `N`, `UP`, `B`, `SIM` with line-length 100.
-- **Dependencies**: `typer`, `rich` (Python). Runtime: `databricks` CLI, `jq` (for generated helper scripts). No additional Python dependencies without good reason.
+- **Dependencies**: `typer`, `rich`, `tomli_w` (Python). `tomli` for Python <3.11. Runtime: `databricks` CLI, `jq` (for generated helper scripts). No additional Python dependencies without good reason.
 - **Module boundaries**: Add new functions to the appropriate subpackage. Keep `cli.py` as a thin dispatcher.
 
 ## Development Workflow
@@ -215,15 +228,17 @@ setup-fmapi-claudecode --help
 
 ## Testing
 
-The test suite covers core modules with 84 tests:
+The test suite covers core modules with 145 tests:
 
 | Test File | Coverage |
 |---|---|
 | `test_cli_flags.py` | CLI help, version, mutual exclusion, validation |
 | `test_config_validation.py` | Config file loading, JSON parsing, key validation |
 | `test_settings_manager.py` | Settings read/write/merge, permissions, legacy cleanup |
+| `test_toml_manager.py` | TOML read/write/merge, provider merge/remove, permissions |
 | `test_hooks_logic.py` | Hook merge/uninstall (29+ cases) |
 | `test_agent_adapter.py` | AgentConfig fields, ClaudeCodeAdapter methods |
+| `test_codex_adapter.py` | CodexAdapter identity, TOML read_env, config discovery |
 | `test_platform.py` | OS/WSL/headless detection |
 | `test_template_renderer.py` | Placeholder substitution, permissions, error handling |
 | `test_deps.py` | Xcode CLT detection, Python version detection |
