@@ -268,7 +268,7 @@ def uninstall() -> None:
 
 @app.command(name="install-skills")
 def install_skills() -> None:
-    """Install FMAPI slash command skills to ~/.claude/skills/."""
+    """Install FMAPI skills for the configured agent."""
     from fmapi_opskit.commands.skills import do_install_skills
 
     do_install_skills(_get_adapter(), _get_script_dir())
@@ -276,7 +276,7 @@ def install_skills() -> None:
 
 @app.command(name="uninstall-skills")
 def uninstall_skills() -> None:
-    """Remove FMAPI slash command skills from ~/.claude/skills/."""
+    """Remove FMAPI skills for the configured agent."""
     from fmapi_opskit.commands.skills import do_uninstall_skills
 
     do_uninstall_skills(_get_adapter())

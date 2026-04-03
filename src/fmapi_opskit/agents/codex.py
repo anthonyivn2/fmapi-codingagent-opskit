@@ -16,6 +16,15 @@ PROVIDER_NAME = "Databricks FMAPI"
 WIRE_API = "responses"
 AUTH_TIMEOUT_MS = 10000
 
+SKILL_NAMES = (
+    "fmapi-codingagent-status",
+    "fmapi-codingagent-reauth",
+    "fmapi-codingagent-setup",
+    "fmapi-codingagent-doctor",
+    "fmapi-codingagent-list-models",
+    "fmapi-codingagent-validate-models",
+)
+
 CODEX_CONFIG = AgentConfig(
     # Identity
     name="Codex",
@@ -115,12 +124,42 @@ class CodexAdapter:
         log.debug("ensure_onboarding: no onboarding flag for Codex")
 
     def register_plugin(self, script_dir: Path) -> None:
-        """No plugin registration for Codex."""
-        log.debug("register_plugin: no plugin registration for Codex")
+        """Copy skill files to ~/.agents/skills/ for Codex auto-discovery."""
+        source_skills = script_dir / "skills-codex"
+        if not source_skills.is_dir():
+            log.debug(f"No skills-codex directory found at {source_skills}")
+            return
+
+        target_dir = Path.home() / ".agents" / "skills"
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        log.subheading("Skills")
+        copied = 0
+        for skill_dir in sorted(source_skills.iterdir()):
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            dest = target_dir / skill_dir.name
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill_md, dest / "SKILL.md")
+            copied += 1
+
+        if copied:
+            log.success(f"Installed {copied} skill(s) to {target_dir}.")
+        else:
+            log.debug("No SKILL.md files found to install.")
 
     def deregister_plugin(self) -> None:
-        """No plugin deregistration for Codex."""
-        log.debug("deregister_plugin: no plugin to deregister for Codex")
+        """Remove FMAPI skill files from ~/.agents/skills/."""
+        skills_dir = Path.home() / ".agents" / "skills"
+        removed = 0
+        for name in SKILL_NAMES:
+            skill_dir = skills_dir / name
+            if skill_dir.is_dir():
+                shutil.rmtree(skill_dir)
+                removed += 1
+        if removed:
+            log.success(f"Removed {removed} skill(s) from {skills_dir}.")
 
     def install_cli(self) -> None:
         """Install the Codex CLI if missing."""
@@ -207,11 +246,14 @@ class CodexAdapter:
     def dry_run_extra(self, script_dir: Path) -> None:
         """Print Codex-specific dry-run sections."""
         console = _get_console()
+        c = self._config
         console.print("  [bold]Onboarding[/bold]")
         console.print("  [dim]No onboarding flag needed for Codex[/dim]")
         console.print()
-        console.print("  [bold]Plugins[/bold]")
-        console.print("  [dim]No plugin registration for Codex[/dim]")
+        console.print("  [bold]Skills[/bold]")
+        console.print(
+            f"  [dim]Use '{c.setup_cmd} install-skills' after setup to install skills[/dim]"
+        )
 
 
 def _get_console():

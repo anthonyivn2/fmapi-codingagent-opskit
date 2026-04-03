@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import tomli_w
 
-from fmapi_opskit.agents.codex import CODEX_CONFIG, CodexAdapter
+from fmapi_opskit.agents.codex import CODEX_CONFIG, SKILL_NAMES, CodexAdapter
 from fmapi_opskit.config.discovery import discover_config
 
 
@@ -80,6 +80,11 @@ def test_codex_config_no_env_keys(codex_config):
     assert codex_config.env_base_url == ""
     assert codex_config.required_env_keys == ()
     assert codex_config.uninstall_env_keys == ()
+
+
+def test_codex_skill_names_has_six_entries():
+    assert len(SKILL_NAMES) == 6
+    assert all(name.startswith("fmapi-codingagent-") for name in SKILL_NAMES)
 
 
 # --- read_env tests ---

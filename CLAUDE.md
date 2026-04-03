@@ -55,12 +55,13 @@ src/fmapi_opskit/
     renderer.py                                    # str.replace for __PLACEHOLDER__ tokens, atomic write + chmod
 example-config.json                                # Example config file for --config / --config-url
 .claude-plugin/plugin.json                         # Claude Code plugin manifest
-skills/fmapi-codingagent-status/SKILL.md           # /fmapi-codingagent-status skill
-skills/fmapi-codingagent-reauth/SKILL.md           # /fmapi-codingagent-reauth skill
-skills/fmapi-codingagent-setup/SKILL.md            # /fmapi-codingagent-setup skill
-skills/fmapi-codingagent-doctor/SKILL.md           # /fmapi-codingagent-doctor skill
-skills/fmapi-codingagent-list-models/SKILL.md      # /fmapi-codingagent-list-models skill
-skills/fmapi-codingagent-validate-models/SKILL.md  # /fmapi-codingagent-validate-models skill
+skills/fmapi-codingagent-status/SKILL.md           # /fmapi-codingagent-status skill (Claude Code)
+skills/fmapi-codingagent-reauth/SKILL.md           # /fmapi-codingagent-reauth skill (Claude Code)
+skills/fmapi-codingagent-setup/SKILL.md            # /fmapi-codingagent-setup skill (Claude Code)
+skills/fmapi-codingagent-doctor/SKILL.md           # /fmapi-codingagent-doctor skill (Claude Code)
+skills/fmapi-codingagent-list-models/SKILL.md      # /fmapi-codingagent-list-models skill (Claude Code)
+skills/fmapi-codingagent-validate-models/SKILL.md  # /fmapi-codingagent-validate-models skill (Claude Code)
+skills-codex/fmapi-codingagent-*/SKILL.md          # Same 6 skills adapted for Codex ($skillname)
 tests/
   conftest.py                                      # Fixtures: adapter, sample_settings, sample_config
   test_cli_flags.py                                # Typer CliRunner: help, mutual exclusion, validation
@@ -228,7 +229,7 @@ setup-fmapi-claudecode --help
 
 ## Testing
 
-The test suite covers core modules with 145 tests:
+The test suite covers core modules with 151 tests:
 
 | Test File | Coverage |
 |---|---|
@@ -239,6 +240,7 @@ The test suite covers core modules with 145 tests:
 | `test_hooks_logic.py` | Hook merge/uninstall (29+ cases) |
 | `test_agent_adapter.py` | AgentConfig fields, ClaudeCodeAdapter methods |
 | `test_codex_adapter.py` | CodexAdapter identity, TOML read_env, config discovery |
+| `test_codex_skills.py` | Codex skill register/deregister, ~/.agents/skills/ paths |
 | `test_platform.py` | OS/WSL/headless detection |
 | `test_template_renderer.py` | Placeholder substitution, permissions, error handling |
 | `test_deps.py` | Xcode CLT detection, Python version detection |
