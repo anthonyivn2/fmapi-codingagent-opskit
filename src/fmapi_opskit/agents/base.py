@@ -44,6 +44,9 @@ class AgentConfig:
     env_haiku: str
     env_ttl: str
 
+    # Minimum CLI version required (empty string means no version check)
+    min_cli_version: str = ""
+
     # Required env keys for doctor checks
     required_env_keys: tuple[str, ...] = ()
 

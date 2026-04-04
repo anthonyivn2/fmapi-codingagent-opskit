@@ -25,6 +25,8 @@ SKILL_NAMES = (
     "fmapi-codingagent-validate-models",
 )
 
+MIN_CODEX_VERSION = "0.118.0"
+
 CODEX_CONFIG = AgentConfig(
     # Identity
     name="Codex",
@@ -54,6 +56,8 @@ CODEX_CONFIG = AgentConfig(
     env_sonnet="",
     env_haiku="",
     env_ttl="",
+    # Version requirement
+    min_cli_version=MIN_CODEX_VERSION,
     # No env keys (TOML-based config)
     required_env_keys=(),
     legacy_cleanup_keys=(),
@@ -166,14 +170,34 @@ class CodexAdapter:
             log.success(f"Removed {removed} skill(s) from {skills_dir}.")
 
     def install_cli(self) -> None:
-        """Install the Codex CLI if missing."""
+        """Install or upgrade the Codex CLI, ensuring minimum version requirement."""
         c = self._config
-        if shutil.which(c.cli_cmd):
-            log.success(f"{c.name} already installed.")
+        installed_version = _get_codex_version()
+
+        if installed_version:
+            if _version_satisfies(installed_version, c.min_cli_version):
+                log.success(f"{c.name} {installed_version} already installed.")
+                return
+            log.warn(
+                f"{c.name} {installed_version} is below minimum required "
+                f"version {c.min_cli_version}. Upgrading ..."
+            )
+            _upgrade_codex()
         else:
             log.info(f"Installing {c.name} ...")
-            subprocess.run(c.cli_install_cmd, shell=True, check=True)
-            log.success(f"{c.name} installed.")
+            _install_codex()
+
+        # Verify installation succeeded
+        new_version = _get_codex_version()
+        if new_version and _version_satisfies(new_version, c.min_cli_version):
+            log.success(f"{c.name} {new_version} installed.")
+        elif new_version:
+            log.warn(
+                f"{c.name} {new_version} installed but still below "
+                f"minimum {c.min_cli_version}."
+            )
+        else:
+            log.error(f"Failed to install {c.name}. Install manually and re-run setup.")
 
     def doctor_extra(self) -> bool:
         """Check Codex TOML config is valid. Return True if pass."""
@@ -259,6 +283,97 @@ class CodexAdapter:
         console.print(
             f"  [dim]Use '{c.setup_cmd} install-skills' after setup to install skills[/dim]"
         )
+
+
+def _get_codex_version() -> str:
+    """Return the installed Codex CLI version string, or empty if not found."""
+    if not shutil.which("codex"):
+        return ""
+    try:
+        result = subprocess.run(
+            ["codex", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        # Output is typically "codex-cli 0.118.0" or "codex/0.118.0"
+        version_text = result.stdout.strip()
+        # Strip any prefix like "codex-cli " or "codex/"
+        for sep in (" ", "/"):
+            if sep in version_text:
+                version_text = version_text.rsplit(sep, 1)[1]
+        return version_text
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def _version_satisfies(installed: str, minimum: str) -> bool:
+    """Check if installed version meets the minimum requirement.
+
+    Compares version segments numerically (e.g. "0.1.2025011800" >= "0.1.2025011800").
+    """
+    if not minimum:
+        return True
+    try:
+        installed_parts = [int(p) for p in installed.split(".")]
+        minimum_parts = [int(p) for p in minimum.split(".")]
+        # Pad shorter list with zeros for comparison
+        max_len = max(len(installed_parts), len(minimum_parts))
+        installed_parts.extend([0] * (max_len - len(installed_parts)))
+        minimum_parts.extend([0] * (max_len - len(minimum_parts)))
+        return installed_parts >= minimum_parts
+    except (ValueError, AttributeError):
+        # Non-numeric version — fall back to string comparison
+        return installed >= minimum
+
+
+def _install_codex() -> None:
+    """Install Codex CLI via npm, falling back to brew if npm fails or is unavailable."""
+    if shutil.which("npm"):
+        try:
+            subprocess.run(
+                ["npm", "install", "-g", "@openai/codex"],
+                check=True,
+            )
+            return
+        except subprocess.CalledProcessError:
+            log.warn("npm install failed, trying brew ...")
+
+    # Fallback: brew
+    if shutil.which("brew"):
+        subprocess.run(["brew", "install", "codex"], check=True)
+        return
+
+    log.error(
+        "Cannot install Codex: neither npm nor brew is available. "
+        "Install Codex manually: npm install -g @openai/codex"
+    )
+
+
+def _upgrade_codex() -> None:
+    """Upgrade Codex CLI via npm, falling back to brew if npm fails or is unavailable."""
+    if shutil.which("npm"):
+        try:
+            subprocess.run(
+                ["npm", "update", "-g", "@openai/codex"],
+                check=True,
+            )
+            return
+        except subprocess.CalledProcessError:
+            log.warn("npm update failed, trying brew ...")
+
+    # Fallback: brew
+    if shutil.which("brew"):
+        try:
+            subprocess.run(["brew", "upgrade", "codex"], check=True)
+            return
+        except subprocess.CalledProcessError:
+            log.warn("brew upgrade failed (Codex may not be brew-managed).")
+
+    log.error(
+        "Cannot upgrade Codex: neither npm nor brew succeeded. "
+        "Upgrade manually: npm install -g @openai/codex"
+    )
 
 
 def _get_console():
