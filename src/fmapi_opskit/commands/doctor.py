@@ -527,8 +527,7 @@ def _check_token_cache_file(
     entries = payload.get("tokens") or payload.get("Tokens")
     if not isinstance(entries, dict) or not entries:
         console.print(
-            "  [dim]INFO[/dim]  No cached OAuth sessions yet  "
-            "[dim]Run reauth if needed[/dim]"
+            "  [dim]INFO[/dim]  No cached OAuth sessions yet  [dim]Run reauth if needed[/dim]"
         )
         return
 

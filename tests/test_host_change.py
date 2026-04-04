@@ -39,6 +39,7 @@ def _run_gather(
         cli_ai_gateway=cli_ai_gateway,
         cli_workspace_id=cli_workspace_id,
         cli_settings_location="home",
+        cli_provider_id="",
         cli_model="m",
         cli_opus="o",
         cli_sonnet="s",

@@ -49,6 +49,7 @@ def do_setup(
     cli_settings_location: str,
     cli_ai_gateway: str,
     cli_workspace_id: str,
+    cli_provider_id: str,
     file_cfg: FileConfig,
     non_interactive: bool,
     dry_run: bool,
@@ -63,11 +64,13 @@ def do_setup(
     if not non_interactive and not dry_run:
         cfg = discover_config(adapter)
         if cfg.found and cfg.host and _show_reuse_summary(adapter, cfg):
+            _reuse_ttl_minutes = cli_ttl or cfg.ttl or "55"
             migrate_helper_if_needed(
                 adapter,
                 helper_file=cfg.helper_file,
                 host=cfg.host,
                 profile=cfg.profile or c.default_profile,
+                ttl_ms=str(int(_reuse_ttl_minutes) * 60000),
                 reason="setup (existing installation)",
             )
             non_interactive = True
@@ -80,6 +83,7 @@ def do_setup(
             cli_haiku = cli_haiku or cfg.haiku or c.default_haiku
             cli_ai_gateway = cli_ai_gateway or cfg.ai_gateway or "false"
             cli_workspace_id = cli_workspace_id or cfg.workspace_id or ""
+            cli_provider_id = cli_provider_id or cfg.provider_id or ""
             if not cli_settings_location and cfg.settings_file:
                 cfg_base = cfg.settings_file.rsplit(f"/{c.settings_dir}/{c.settings_filename}", 1)[
                     0
@@ -98,6 +102,7 @@ def do_setup(
         cli_ai_gateway=cli_ai_gateway,
         cli_workspace_id=cli_workspace_id,
         cli_settings_location=cli_settings_location,
+        cli_provider_id=cli_provider_id,
         cli_model=cli_model,
         cli_opus=cli_opus,
         cli_sonnet=cli_sonnet,
@@ -128,6 +133,7 @@ def do_setup(
             ai_gateway_enabled=gather.ai_gateway_enabled,
             pending_workspace_id=gather.pending_workspace_id,
             script_dir=script_dir,
+            provider_id=gather.provider_id,
         )
         sys.exit(0)
 
@@ -201,6 +207,7 @@ def do_setup(
         ttl_ms=gather.ttl_ms,
         ai_gateway_enabled=gather.ai_gateway_enabled,
         workspace_id=workspace_id,
+        provider_id=gather.provider_id,
     )
 
     adapter.ensure_onboarding()
@@ -210,12 +217,15 @@ def do_setup(
         helper_file=gather.helper_file,
         host=gather.host,
         profile=gather.profile,
+        ttl_ms=gather.ttl_ms,
     )
 
     # Clean up legacy hooks from prior installations (hooks are no longer used)
-    cleanup_legacy_hooks(
-        settings_file=gather.settings_file,
-    )
+    # Only applies to JSON settings (Claude Code); TOML configs never had hooks.
+    if not gather.settings_file.endswith(".toml"):
+        cleanup_legacy_hooks(
+            settings_file=gather.settings_file,
+        )
 
     run_smoke_test(
         helper_file=gather.helper_file,
@@ -255,9 +265,10 @@ def _show_reuse_summary(adapter: AgentAdapter, cfg: FmapiConfig) -> bool:
     console.print(f"  [dim]Profile[/dim]    [bold]{cfg.profile or c.default_profile}[/bold]")
     console.print(f"  [dim]TTL[/dim]        [bold]{cfg.ttl or '55'}m[/bold]")
     console.print(f"  [dim]Model[/dim]      [bold]{cfg.model or c.default_model}[/bold]")
-    console.print(f"  [dim]Opus[/dim]       [bold]{cfg.opus or c.default_opus}[/bold]")
-    console.print(f"  [dim]Sonnet[/dim]     [bold]{cfg.sonnet or c.default_sonnet}[/bold]")
-    console.print(f"  [dim]Haiku[/dim]      [bold]{cfg.haiku or c.default_haiku}[/bold]")
+    if c.default_opus:
+        console.print(f"  [dim]Opus[/dim]       [bold]{cfg.opus or c.default_opus}[/bold]")
+        console.print(f"  [dim]Sonnet[/dim]     [bold]{cfg.sonnet or c.default_sonnet}[/bold]")
+        console.print(f"  [dim]Haiku[/dim]      [bold]{cfg.haiku or c.default_haiku}[/bold]")
     if cfg.ai_gateway == "true":
         console.print("  [dim]Routing[/dim]    [bold]AI Gateway v2 (beta)[/bold]")
         console.print(f"  [dim]Workspace ID[/dim] [bold]{cfg.workspace_id or 'unknown'}[/bold]")
@@ -302,12 +313,13 @@ def _print_summary(
     console.print(f"  [dim]Workspace[/dim]  [bold]{host}[/bold]")
     console.print(f"  [dim]Profile[/dim]    [bold]{profile}[/bold]")
     console.print(f"  [dim]Model[/dim]      [bold]{model}[/bold]")
-    console.print(f"  [dim]Opus[/dim]       [bold]{opus}[/bold]")
-    console.print(f"  [dim]Sonnet[/dim]     [bold]{sonnet}[/bold]")
-    console.print(f"  [dim]Haiku[/dim]      [bold]{haiku}[/bold]")
+    if c.default_opus:
+        console.print(f"  [dim]Opus[/dim]       [bold]{opus}[/bold]")
+        console.print(f"  [dim]Sonnet[/dim]     [bold]{sonnet}[/bold]")
+        console.print(f"  [dim]Haiku[/dim]      [bold]{haiku}[/bold]")
 
     if ai_gateway_enabled:
-        gw_url = build_base_url(host, True, workspace_id)
+        gw_url = build_base_url(host, True, workspace_id, c.base_url_suffix)
         console.print("  [dim]Routing[/dim]    [bold]AI Gateway v2 (beta)[/bold]")
         console.print(f"  [dim]Workspace ID[/dim] [bold]{workspace_id}[/bold]")
         console.print(f"  [dim]Base URL[/dim]   [bold]{gw_url}[/bold]")

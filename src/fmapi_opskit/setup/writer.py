@@ -28,13 +28,54 @@ def write_settings(
     ttl_ms: str,
     ai_gateway_enabled: bool,
     workspace_id: str,
+    provider_id: str = "",
 ) -> None:
-    """Write/merge the settings.json file."""
+    """Write/merge the settings file (JSON or TOML based on extension)."""
     log.heading("Writing settings")
 
-    base_url = build_base_url(host, ai_gateway_enabled, workspace_id)
-    env_json = adapter.write_env_json(model, base_url, opus, sonnet, haiku, ttl_ms)
+    c = adapter.config
+    base_url = build_base_url(host, ai_gateway_enabled, workspace_id, c.base_url_suffix)
 
+    if settings_file.endswith(".toml"):
+        _write_toml_settings(
+            settings_file=settings_file,
+            helper_file=helper_file,
+            base_url=base_url,
+            model=model,
+            ttl_ms=ttl_ms,
+            provider_id=provider_id,
+        )
+    else:
+        _write_json_settings(
+            adapter=adapter,
+            settings_file=settings_file,
+            helper_file=helper_file,
+            base_url=base_url,
+            model=model,
+            opus=opus,
+            sonnet=sonnet,
+            haiku=haiku,
+            ttl_ms=ttl_ms,
+        )
+
+    log.debug(f"write_settings: wrote {settings_file} (TTL={ttl_ms}ms)")
+    log.success(f"Settings written to {settings_file}.")
+
+
+def _write_json_settings(
+    *,
+    adapter: AgentAdapter,
+    settings_file: str,
+    helper_file: str,
+    base_url: str,
+    model: str,
+    opus: str,
+    sonnet: str,
+    haiku: str,
+    ttl_ms: str,
+) -> None:
+    """Write/merge the JSON settings.json file."""
+    env_json = adapter.write_env_json(model, base_url, opus, sonnet, haiku, ttl_ms)
     mgr = SettingsManager(Path(settings_file))
     mgr.merge_env(
         env_json,
@@ -42,8 +83,38 @@ def write_settings(
         legacy_cleanup_keys=adapter.config.legacy_cleanup_keys,
     )
 
-    log.debug(f"write_settings: wrote {settings_file} (TTL={ttl_ms}ms)")
-    log.success(f"Settings written to {settings_file}.")
+
+def _write_toml_settings(
+    *,
+    settings_file: str,
+    helper_file: str,
+    base_url: str,
+    model: str,
+    ttl_ms: str,
+    provider_id: str = "",
+) -> None:
+    """Write/merge the TOML config.toml file for Codex."""
+    from fmapi_opskit.agents.codex import (
+        AUTH_TIMEOUT_MS,
+        PROVIDER_ID,
+        PROVIDER_NAME,
+        WIRE_API,
+    )
+    from fmapi_opskit.settings.toml_manager import TomlSettingsManager
+
+    resolved_id = provider_id or PROVIDER_ID
+    mgr = TomlSettingsManager(Path(settings_file))
+    mgr.merge_provider(
+        provider_id=resolved_id,
+        provider_name=PROVIDER_NAME,
+        base_url=base_url,
+        wire_api=WIRE_API,
+        auth_command=helper_file,
+        refresh_interval_ms=int(ttl_ms),
+        timeout_ms=AUTH_TIMEOUT_MS,
+        profile=resolved_id,
+        model=model,
+    )
 
 
 def write_helper(
@@ -52,12 +123,16 @@ def write_helper(
     helper_file: str,
     host: str,
     profile: str,
+    ttl_ms: str = "3300000",
 ) -> None:
     """Write the API key helper script from template."""
     log.heading("API key helper")
 
     template = _TEMPLATES_DIR / "fmapi-key-helper.sh.template"
     setup_script = f"setup-fmapi-{adapter.config.id}"
+
+    ttl_seconds = int(ttl_ms) // 1000
+    expiry_buffer = ttl_seconds + 300
 
     render_template(
         template,
@@ -66,6 +141,7 @@ def write_helper(
             "PROFILE": profile,
             "HOST": host,
             "SETUP_SCRIPT": setup_script,
+            "EXPIRY_BUFFER_SECONDS": str(expiry_buffer),
         },
         mode=0o700,
     )
@@ -103,6 +179,7 @@ def migrate_helper_if_needed(
     helper_file: str,
     host: str,
     profile: str,
+    ttl_ms: str = "3300000",
     reason: str,
 ) -> bool:
     """Rewrite helper script when legacy patterns are detected.
@@ -120,7 +197,7 @@ def migrate_helper_if_needed(
         return False
 
     log.info(f"Legacy helper script detected during {reason}; refreshing it now.")
-    write_helper(adapter, helper_file=helper_file, host=host, profile=profile)
+    write_helper(adapter, helper_file=helper_file, host=host, profile=profile, ttl_ms=ttl_ms)
     return True
 
 

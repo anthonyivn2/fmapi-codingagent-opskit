@@ -110,7 +110,7 @@ def display_status_dashboard(cfg: FmapiConfig, adapter: AgentAdapter) -> None:
     if cfg.ai_gateway == "true":
         console.print("  [dim]Routing[/dim]    [bold]AI Gateway v2 (beta)[/bold]")
         console.print(f"  [dim]Workspace ID[/dim] [bold]{cfg.workspace_id or 'unknown'}[/bold]")
-        base_url = build_base_url(cfg.host, True, cfg.workspace_id)
+        base_url = build_base_url(cfg.host, True, cfg.workspace_id, adapter.config.base_url_suffix)
         console.print(f"  [dim]Base URL[/dim]   [bold]{base_url}[/bold]")
     else:
         console.print("  [dim]Routing[/dim]    [bold]Serving Endpoints (v1)[/bold]")

@@ -108,6 +108,7 @@ class AgentAdapter(Protocol):
         sonnet: str,
         haiku: str,
         ttl_ms: str,
+        provider_id: str = "",
     ) -> None:
         """Print env vars for dry-run display."""
         ...

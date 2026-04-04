@@ -7,6 +7,7 @@ import json
 import pytest
 
 from fmapi_opskit.agents.claudecode import CLAUDE_CODE_CONFIG, ClaudeCodeAdapter
+from fmapi_opskit.agents.codex import CODEX_CONFIG, CodexAdapter
 
 
 @pytest.fixture
@@ -19,6 +20,18 @@ def adapter() -> ClaudeCodeAdapter:
 def agent_config():
     """Return the CLAUDE_CODE_CONFIG constant."""
     return CLAUDE_CODE_CONFIG
+
+
+@pytest.fixture
+def codex_adapter() -> CodexAdapter:
+    """Return a fresh CodexAdapter instance."""
+    return CodexAdapter()
+
+
+@pytest.fixture
+def codex_config():
+    """Return the CODEX_CONFIG constant."""
+    return CODEX_CONFIG
 
 
 @pytest.fixture

@@ -16,6 +16,7 @@ VALID_CONFIG_KEYS = frozenset(
         "settings_location",
         "ai_gateway",
         "workspace_id",
+        "provider_id",
     }
 )
 
@@ -41,6 +42,9 @@ class FmapiConfig:
     ai_gateway: str = ""  # "true" or "false"
     workspace_id: str = ""
 
+    # TOML provider/profile name (Codex only)
+    provider_id: str = ""
+
     # File paths
     settings_file: str = ""
     helper_file: str = ""
@@ -60,3 +64,4 @@ class FileConfig:
     settings_location: str = ""
     ai_gateway: str = ""
     workspace_id: str = ""
+    provider_id: str = ""

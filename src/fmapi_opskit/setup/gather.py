@@ -41,6 +41,8 @@ class GatherResult:
         self.pending_workspace_id: str = ""
         self.settings_file: str = ""
         self.helper_file: str = ""
+        # TOML provider/profile name (Codex only)
+        self.provider_id: str = ""
         # Model defaults (for gather_config_models)
         self.default_model: str = ""
         self.default_opus: str = ""
@@ -59,6 +61,7 @@ def gather_config_pre_auth(
     cli_ai_gateway: str,
     cli_workspace_id: str,
     cli_settings_location: str,
+    cli_provider_id: str,
     cli_model: str,
     cli_opus: str,
     cli_sonnet: str,
@@ -216,6 +219,29 @@ def gather_config_pre_auth(
     result.settings_file = f"{settings_base}/{c.settings_dir}/{c.settings_filename}"
     result.helper_file = f"{settings_base}/{c.settings_dir}/{c.helper_filename}"
 
+    # TOML profile & provider name (Codex only)
+    if c.settings_filename.endswith(".toml"):
+        from fmapi_opskit.agents.codex import PROVIDER_ID as DEFAULT_PROVIDER_ID
+
+        default_provider_id = _first_non_empty(
+            cli_provider_id, file_cfg.provider_id, cfg.provider_id, DEFAULT_PROVIDER_ID
+        )
+        result.provider_id = prompt_value(
+            "TOML profile & provider name",
+            cli_provider_id,
+            default_provider_id,
+            non_interactive,
+        )
+        if not result.provider_id:
+            log.error("Provider name is required.")
+            sys.exit(1)
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", result.provider_id):
+            log.error(
+                f"Invalid provider name: '{result.provider_id}'. "
+                "Must start with a letter, then letters, numbers, and underscores."
+            )
+            sys.exit(1)
+
     log.debug(f"gather: host={result.host} profile={result.profile}")
     log.debug(f"gather: settings={result.settings_file} helper={result.helper_file}")
 
@@ -304,27 +330,31 @@ def gather_config_models(
         non_interactive,
         normalized_models,
     )
-    result.opus = _prompt_model_value(
-        "Opus model",
-        cli_opus,
-        gather.default_opus,
-        non_interactive,
-        normalized_models,
-    )
-    result.sonnet = _prompt_model_value(
-        "Sonnet model",
-        cli_sonnet,
-        gather.default_sonnet,
-        non_interactive,
-        normalized_models,
-    )
-    result.haiku = _prompt_model_value(
-        "Haiku model",
-        cli_haiku,
-        gather.default_haiku,
-        non_interactive,
-        normalized_models,
-    )
+
+    # Only prompt for model tiers if the adapter supports them
+    # (e.g., Claude Code has opus/sonnet/haiku; Codex has a single model)
+    if gather.default_opus:
+        result.opus = _prompt_model_value(
+            "Opus model",
+            cli_opus,
+            gather.default_opus,
+            non_interactive,
+            normalized_models,
+        )
+        result.sonnet = _prompt_model_value(
+            "Sonnet model",
+            cli_sonnet,
+            gather.default_sonnet,
+            non_interactive,
+            normalized_models,
+        )
+        result.haiku = _prompt_model_value(
+            "Haiku model",
+            cli_haiku,
+            gather.default_haiku,
+            non_interactive,
+            normalized_models,
+        )
 
     log.debug(
         f"models: model={result.model} opus={result.opus} "

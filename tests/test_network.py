@@ -92,3 +92,28 @@ def test_detect_non_gateway_url():
     is_gw, ws_id = detect_gateway_from_url("https://example.com/serving-endpoints/anthropic")
     assert is_gw is False, "Non-gateway URL should not be detected as gateway"
     assert ws_id == "", f"Non-gateway URL should have empty workspace ID, got '{ws_id}'"
+
+
+# --- build_base_url with custom suffix (Codex) ---
+
+
+def test_build_url_codex_suffix_no_gateway():
+    url = build_base_url(
+        "https://example.com",
+        gateway_enabled=False,
+        workspace_id="",
+        base_url_suffix="/serving-endpoints/openai/v1",
+    )
+    expected = "https://example.com/serving-endpoints/openai/v1"
+    assert url == expected, f"Codex non-gateway URL mismatch: expected '{expected}', got '{url}'"
+
+
+def test_build_url_codex_suffix_with_gateway():
+    url = build_base_url(
+        "https://example.com",
+        gateway_enabled=True,
+        workspace_id="12345",
+        base_url_suffix="/serving-endpoints/openai/v1",
+    )
+    expected = "https://12345.ai-gateway.cloud.databricks.com/openai/v1"
+    assert url == expected, f"Codex gateway URL mismatch: expected '{expected}', got '{url}'"
