@@ -28,6 +28,7 @@ def _render_helper_for_test(tmp_path: Path, host: str, profile: str) -> Path:
             "PROFILE": profile,
             "HOST": host,
             "SETUP_SCRIPT": "setup-fmapi-claudecode",
+            "EXPIRY_BUFFER_SECONDS": "3600",
         },
         mode=0o700,
     )

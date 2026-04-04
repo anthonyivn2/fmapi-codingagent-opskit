@@ -17,11 +17,13 @@ def do_reauth(adapter: AgentAdapter) -> None:
     require_fmapi_config(adapter, "reauth")
     cfg = discover_config(adapter)
 
+    ttl_ms = str(int(cfg.ttl or "55") * 60000)
     migrate_helper_if_needed(
         adapter,
         helper_file=cfg.helper_file,
         host=cfg.host,
         profile=cfg.profile,
+        ttl_ms=ttl_ms,
         reason="reauth",
     )
 

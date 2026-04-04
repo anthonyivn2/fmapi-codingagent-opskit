@@ -12,7 +12,7 @@ for _cmd in databricks jq; do
   fi
 done
 
-_EXPIRY_BUFFER_SECONDS=300
+_EXPIRY_BUFFER_SECONDS=__EXPIRY_BUFFER_SECONDS__
 _REAUTH_TIMEOUT_SECONDS=180
 _REAUTH_POLL_INTERVAL_SECONDS=1
 _DBX_CACHE_LOCK_WAIT_SECONDS=10
@@ -162,7 +162,10 @@ _fetch_token() {
     [ -n "$_token" ] || return 1
 
     _expires_in=$(_get_token_time_left "$_token_json")
-    _is_expiring_soon "$_expires_in" && return 1
+    # After refresh, accept even if under buffer — but reject truly expired tokens
+    if [ -n "$_expires_in" ] && [ "$_expires_in" -le 0 ] 2>/dev/null; then
+      return 1
+    fi
   fi
 
   printf '%s' "$_token"
@@ -190,7 +193,10 @@ _auto_reauth_and_emit_token() {
     databricks auth login --host "$FMAPI_HOST" --profile "$FMAPI_PROFILE" 1>&2 &
   _login_pid=$!
 
+  echo "FMAPI: Waiting for browser authentication (up to ${_REAUTH_TIMEOUT_SECONDS}s) ..." >&2
+
   _start_epoch=$(date +%s)
+  _login_exited=0
   while :; do
     token=$(_fetch_token || true)
     if [ -n "$token" ]; then
@@ -199,14 +205,11 @@ _auto_reauth_and_emit_token() {
       return 0
     fi
 
-    if ! kill -0 "$_login_pid" 2>/dev/null; then
+    # Reap the login process when it exits, but keep polling —
+    # the user may still be completing the browser OAuth flow.
+    if [ "$_login_exited" -eq 0 ] && ! kill -0 "$_login_pid" 2>/dev/null; then
       wait "$_login_pid" 2>/dev/null || true
-      token=$(_fetch_token || true)
-      if [ -n "$token" ]; then
-        echo "$token"
-        return 0
-      fi
-      return 1
+      _login_exited=1
     fi
 
     _now_epoch=$(date +%s)
