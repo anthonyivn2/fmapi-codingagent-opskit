@@ -12,17 +12,17 @@ Databricks serves frontier and open-source LLMs through its [Foundation Model AP
 - **One-command setup** &mdash; installs dependencies, authenticates via OAuth, and configures everything
 - **Automatic OAuth token management** &mdash; no PATs to rotate or manage
 - **Built-in diagnostics and model validation** &mdash; `doctor`, `list-models`, `validate-models`
-- **Plugin slash commands** &mdash; manage your FMAPI config without leaving Claude Code
+- **Plugin slash commands** &mdash; manage your FMAPI config without leaving your coding agent
 - **Built-in Usage Tracking and Payload Logging through Databricks AI Gateway** &mdash; Leverage Databricks's [AI Gateway Usage Tracking](https://docs.databricks.com/aws/en/ai-gateway/configure-ai-gateway-endpoints#configure-ai-gateway-using-the-ui) to track and audit Coding Agent usage for your organization, and track your Coding Agent request and response payload through the use of [AI Gateway Inference Table](https://docs.databricks.com/aws/en/ai-gateway/inference-tables)
 
 ## Supported Agents
 
-FMAPI supports all of the coding agents listed below. The CLI automates the configuration for each agent &mdash; support for OpenAI Codex and Gemini CLI is planned.
+FMAPI supports all of the coding agents listed below. The CLI automates the configuration for each agent.
 
 | Coding Agent | CLI Command | Status |
 |---|---|---|
 | Claude Code | `setup-fmapi-claudecode` | Implemented |
-| OpenAI Codex | — | Planned |
+| OpenAI Codex | `setup-fmapi-codex` | Implemented |
 | Gemini CLI | — | Planned |
 
 ## Claude Code
@@ -243,16 +243,19 @@ To fully clean up all possible FMAPI-related paths by hand (e.g. if the CLI is a
 # Remove the install directory (default location)
 rm -rf ~/.fmapi-codingagent-setup
 
-# Remove the helper script (default location)
+# Claude Code artifacts
 rm -f ~/.claude/fmapi-key-helper.sh
-
-# Remove skill files
 rm -rf ~/.claude/skills/fmapi-codingagent-*
-
-# Remove FMAPI keys from settings (edit or delete)
 # If FMAPI is the only config in ~/.claude/settings.json:
 rm -f ~/.claude/settings.json
 # Otherwise, remove apiKeyHelper and the ANTHROPIC_* / CLAUDE_CODE_* env keys from the JSON file
+
+# Codex artifacts
+rm -f ~/.codex/fmapi-key-helper.sh
+rm -rf ~/.agents/skills/fmapi-codingagent-*
+# If FMAPI is the only config in ~/.codex/config.toml:
+rm -f ~/.codex/config.toml
+# Otherwise, remove the FMAPI provider block and profile from the TOML file
 ```
 
 #### Updating
@@ -283,7 +286,7 @@ setup-fmapi-claudecode reinstall
 
 ### Plugin Skills
 
-Run `setup-fmapi-claudecode install-skills` to enable these slash commands (copies skill files to `~/.claude/skills/`). To remove them, use `setup-fmapi-claudecode uninstall-skills`.
+Run `setup-fmapi-claudecode install-skills` to enable these slash commands (copies skill files to `~/.claude/skills/`). For Codex, use `setup-fmapi-codex install-skills` (installs to `~/.agents/skills/`). To remove them, use the corresponding `uninstall-skills` command.
 
 Available skills:
 
@@ -347,8 +350,11 @@ Priority when combining sources: CLI flags > config file > existing `settings.js
 
 ### CLI Reference
 
+Both `setup-fmapi-claudecode` and `setup-fmapi-codex` share the same CLI interface. The agent is auto-detected from the command name.
+
 ```
 Usage: setup-fmapi-claudecode [OPTIONS] [COMMAND]
+       setup-fmapi-codex [OPTIONS] [COMMAND]
 
 Commands:
   status                Show FMAPI configuration health dashboard
@@ -356,23 +362,24 @@ Commands:
   doctor                Run comprehensive diagnostics
   list-models           List all serving endpoints in the workspace
   validate-models       Validate configured models exist and are ready
-  install-skills        Install FMAPI slash command skills to ~/.claude/skills/
-  uninstall-skills      Remove FMAPI slash command skills from ~/.claude/skills/
+  install-skills        Install FMAPI slash command skills
+  uninstall-skills      Remove FMAPI slash command skills
   reinstall             Rerun setup using previously saved configuration
   self-update           Update to the latest version
   uninstall             Remove FMAPI helper scripts and settings
 
 Setup options (used when no subcommand, skip interactive prompts):
   --host URL            Databricks workspace URL (required for non-interactive)
-  --profile NAME        CLI profile name (default: fmapi-claudecode-profile)
-  --model MODEL         Primary model (default: databricks-claude-opus-4-6)
-  --opus MODEL          Opus model (default: databricks-claude-opus-4-6)
-  --sonnet MODEL        Sonnet model (default: databricks-claude-sonnet-4-6)
-  --haiku MODEL         Haiku model (default: databricks-claude-haiku-4-5)
+  --profile NAME        CLI profile name (default varies by agent)
+  --model MODEL         Primary model (default varies by agent)
+  --opus MODEL          Opus model (Claude Code only)
+  --sonnet MODEL        Sonnet model (Claude Code only)
+  --haiku MODEL         Haiku model (Claude Code only)
   --ttl MINUTES         Token refresh interval in minutes (default: 55, max: 60, 55 recommended)
   --settings-location   Where to write settings: "home", "cwd", or path (default: home)
   --ai-gateway          Use AI Gateway v2 for API routing (beta, default: off)
   --workspace-id ID     Databricks workspace ID for AI Gateway (auto-detected if omitted)
+  --provider-id NAME    TOML profile & provider name (Codex only, default: databricks_fmapi)
 
 Config file options:
   --config PATH         Load configuration from a local JSON file
@@ -539,6 +546,64 @@ Contributions are welcome! To contribute:
 
 All pull requests require review from the code owner before merging. See [RELEASING.md](RELEASING.md) for the release process.
 
+## OpenAI Codex
+
+**Prerequisites:** macOS or Linux, [npm](https://nodejs.org/) (for Codex CLI installation), and a Databricks workspace with FMAPI enabled.
+
+### Install
+
+Install with the same one-liner, specifying `--agent codex`:
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/anthonyivn2/fmapi-codingagent-setup/main/install.sh) --agent codex
+```
+
+Or if already installed, run setup directly:
+
+```bash
+setup-fmapi-codex
+```
+
+### How Codex Setup Differs from Claude Code
+
+- **TOML config** &mdash; Codex uses `~/.codex/config.toml` instead of `settings.json`. The TOML file defines a model provider with command-backed auth that invokes the same `fmapi-key-helper.sh` for OAuth tokens.
+- **Single model** &mdash; Codex uses one model (default: `databricks-gpt-5-2`) rather than separate Opus/Sonnet/Haiku tiers.
+- **`--provider-id`** &mdash; Customizable TOML provider and profile name (default: `databricks_fmapi`). Useful when multiple FMAPI configurations coexist.
+- **Skills** &mdash; Codex skills are installed to `~/.agents/skills/` and invoked via `$skillname` instead of `/skillname`.
+
+### Managing Your Setup
+
+All management commands mirror Claude Code:
+
+```bash
+setup-fmapi-codex status            # health dashboard
+setup-fmapi-codex doctor            # diagnostics
+setup-fmapi-codex reauth            # OAuth refresh
+setup-fmapi-codex list-models       # endpoint table
+setup-fmapi-codex validate-models   # model validation
+setup-fmapi-codex install-skills    # install skills to ~/.agents/skills/
+setup-fmapi-codex uninstall-skills  # remove skills
+setup-fmapi-codex reinstall         # rerun with saved config
+setup-fmapi-codex self-update       # update to latest version
+setup-fmapi-codex uninstall         # remove FMAPI artifacts
+```
+
+### Manual Cleanup
+
+To remove all Codex FMAPI artifacts by hand:
+
+```bash
+# Remove Codex FMAPI config and helper
+rm -f ~/.codex/config.toml
+rm -f ~/.codex/fmapi-key-helper.sh
+
+# Remove skill files
+rm -rf ~/.agents/skills/fmapi-codingagent-*
+
+# Remove the install directory (shared with Claude Code)
+rm -rf ~/.fmapi-codingagent-setup
+```
+
 ## Other Agents
 
-OpenAI Codex and Gemini CLI are planned &mdash; see the [Supported Agents](#supported-agents) table for current status. Contributions welcome.
+Gemini CLI is planned &mdash; see the [Supported Agents](#supported-agents) table for current status. Contributions welcome.
