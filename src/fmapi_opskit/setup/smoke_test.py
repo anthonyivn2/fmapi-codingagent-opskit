@@ -68,12 +68,25 @@ def run_smoke_test(
 
         # 3. Gateway connectivity
         if ai_gateway_enabled and workspace_id:
-            gw_url = f"https://{workspace_id}.ai-gateway.cloud.databricks.com/anthropic/v1/messages"
-            gw_code = check_http_reachable(gw_url, token)
-            if gw_code > 0:
-                log.success(f"AI Gateway v2 reachable (HTTP {gw_code}).")
+            gw_base = f"https://{workspace_id}.ai-gateway.cloud.databricks.com"
+            gw_code = check_http_reachable(gw_base, token)
+            if gw_code == 200:
+                log.success("AI Gateway v2 reachable.")
+            elif 200 < gw_code < 500:
+                log.success(
+                    f"AI Gateway v2 responding (HTTP {gw_code})."
+                )
+            elif gw_code >= 500:
+                console.print(
+                    f"  [warning]WARN[/warning]  AI Gateway v2 server error"
+                    f" (HTTP {gw_code})."
+                )
+                warnings += 1
             else:
-                console.print(f"  [warning]WARN[/warning]  Cannot reach AI Gateway v2 at {gw_url}.")
+                console.print(
+                    f"  [warning]WARN[/warning]  Cannot reach AI Gateway v2"
+                    f" at {gw_base}."
+                )
                 warnings += 1
 
         # 4. Validate configured models

@@ -265,11 +265,16 @@ def validate_models() -> None:
 
 
 @app.command()
-def uninstall() -> None:
+def uninstall(
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt."),
+    ] = False,
+) -> None:
     """Remove all FMAPI artifacts."""
     from fmapi_opskit.commands.uninstall import do_uninstall
 
-    do_uninstall(_get_adapter())
+    do_uninstall(_get_adapter(), skip_confirm=yes)
 
 
 @app.command(name="install-skills")

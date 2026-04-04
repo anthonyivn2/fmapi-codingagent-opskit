@@ -14,10 +14,10 @@ from fmapi_opskit.settings.hooks import is_fmapi_hook_entry, remove_fmapi_hooks
 from fmapi_opskit.settings.manager import SettingsManager
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
-from fmapi_opskit.ui.prompts import select_option
+from fmapi_opskit.ui.prompts import confirm
 
 
-def do_uninstall(adapter: AgentAdapter) -> None:
+def do_uninstall(adapter: AgentAdapter, *, skip_confirm: bool = False) -> None:
     """Remove all FMAPI artifacts and plugin registration."""
     console = get_console()
     c = adapter.config
@@ -85,11 +85,7 @@ def do_uninstall(adapter: AgentAdapter) -> None:
         console.print()
 
     # Confirm
-    choice = select_option(
-        "Remove FMAPI artifacts?",
-        [("Yes", "remove artifacts listed above"), ("No", "cancel and exit")],
-    )
-    if choice != 0:
+    if not skip_confirm and not confirm("Remove FMAPI artifacts listed above?", default=False):
         log.info("Cancelled.")
         sys.exit(0)
 
@@ -154,7 +150,7 @@ def _scan_json_for_fmapi(
     helper = settings.get("apiKeyHelper", "")
     if helper:
         has_fmapi = True
-        if Path(helper).is_file() and helper not in helper_scripts:
+        if helper not in helper_scripts:
             helper_scripts.append(helper)
 
     # FMAPI hooks
@@ -164,7 +160,7 @@ def _scan_json_for_fmapi(
             if is_fmapi_hook_entry(entry):
                 for hook in entry.get("hooks", []):
                     cmd = hook.get("command", "")
-                    if cmd and Path(cmd).is_file() and cmd not in hook_scripts:
+                    if cmd and cmd not in hook_scripts:
                         hook_scripts.append(cmd)
 
     # Legacy _fmapi_meta
@@ -197,7 +193,7 @@ def _scan_toml_for_fmapi(
         command = auth.get("command", "")
         if command and "fmapi-key-helper" in command:
             settings_files.append(abs_path)
-            if Path(command).is_file() and command not in helper_scripts:
+            if command not in helper_scripts:
                 helper_scripts.append(command)
             break
 
