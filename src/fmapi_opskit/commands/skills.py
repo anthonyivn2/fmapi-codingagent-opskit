@@ -6,14 +6,25 @@ import sys
 from pathlib import Path
 
 from fmapi_opskit.agents.base import AgentAdapter
-from fmapi_opskit.agents.claudecode import SKILL_NAMES
 from fmapi_opskit.ui import logging as log
 from fmapi_opskit.ui.console import get_console
 from fmapi_opskit.ui.prompts import select_option
 
 
+def _get_skill_info(adapter: AgentAdapter) -> tuple[tuple[str, ...], Path]:
+    """Return (skill_names, skills_base_dir) for the given adapter."""
+    if adapter.config.id == "codex":
+        from fmapi_opskit.agents.codex import SKILL_NAMES
+
+        return SKILL_NAMES, Path.home() / ".agents" / "skills"
+
+    from fmapi_opskit.agents.claudecode import SKILL_NAMES
+
+    return SKILL_NAMES, Path.home() / ".claude" / "skills"
+
+
 def do_install_skills(adapter: AgentAdapter, script_dir: Path) -> None:
-    """Install FMAPI skill files to ~/.claude/skills/."""
+    """Install FMAPI skills for the configured agent."""
     console = get_console()
     c = adapter.config
     console.print(f"\n[bold]  {c.name} x Databricks FMAPI -- Install Skills[/bold]\n")
@@ -22,15 +33,15 @@ def do_install_skills(adapter: AgentAdapter, script_dir: Path) -> None:
 
 
 def do_uninstall_skills(adapter: AgentAdapter) -> None:
-    """Remove FMAPI skill files from ~/.claude/skills/."""
+    """Remove FMAPI skills for the configured agent."""
     console = get_console()
     c = adapter.config
     console.print(f"\n[bold]  {c.name} x Databricks FMAPI -- Uninstall Skills[/bold]\n")
 
     # Check if any skills are installed
-    skills_base = Path.home() / ".claude" / "skills"
+    skill_names, skills_base = _get_skill_info(adapter)
     installed: list[str] = []
-    for name in SKILL_NAMES:
+    for name in skill_names:
         skill_path = skills_base / name
         if skill_path.is_dir():
             installed.append(str(skill_path))
