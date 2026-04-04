@@ -11,11 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added OpenAI Codex support with a dedicated Codex adapter and `setup-fmapi-codex` entrypoint.
+- Added TOML-based Codex configuration management for provider/profile setup, FMAPI auth command wiring, and uninstall cleanup.
+- Added Codex skill installation support by copying FMAPI skills into `~/.agents/skills/`.
+- Added configurable Codex provider IDs via `--provider-id`.
+- Added Codex CLI minimum-version detection and upgrade checks during setup.
 - Added a repository-level `AGENTS.md` with guidance for Codex and other coding agents.
+- Added test coverage for Codex adapters, Codex skills, TOML settings management, host validation, and related setup paths.
 
 ### Changed
 
-- Ignored macOS `.DS_Store` files in `.gitignore` to keep the working tree clean.
+- Updated the setup workflow and config discovery logic to support both Claude Code and Codex through a shared adapter-driven architecture.
+- Expanded documentation in `README.md` and `CLAUDE.md` to describe Codex support and current repository behavior.
+- Improved uninstall behavior to better clean up FMAPI-managed configuration while preserving unrelated user settings.
+- Improved smoke-test handling and setup writer behavior for multi-agent support.
+- Ignored `.worktrees/` and macOS `.DS_Store` files in `.gitignore` to keep the working tree clean.
+- Updated dependency lock metadata in `uv.lock`.
+
+### Fixed
+
+- Fixed host validation by rejecting invalid URL characters earlier in setup.
+- Hardened shell template generation and helper-script handling around host values.
+- Hardened helper reauth flow and made TTL expiry buffering configurable.
+- Improved uninstall and smoke-test robustness across setup flows.
 
 ## [0.1.1] - 2026-03-08
 
