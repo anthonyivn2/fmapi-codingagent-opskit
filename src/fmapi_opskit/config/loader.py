@@ -15,6 +15,7 @@ class ConfigError(Exception):
 
 
 _HOST_PATTERN = re.compile(r"^https://[a-zA-Z0-9._:/-]+$")
+_REASONING_EFFORT_VALUES = {"minimal", "low", "medium", "high", "xhigh"}
 
 
 def load_config_file(path: str | Path) -> FileConfig:
@@ -94,11 +95,26 @@ def _validate_and_parse(data: dict) -> FileConfig:
             )
         cfg.profile = profile
 
+    provider_name = data.get("provider_name", "")
+    if provider_name:
+        cfg.provider_name = str(provider_name)
+
     # model names (no validation needed, just strings)
     for field_name in ("model", "opus", "sonnet", "haiku"):
         val = data.get(field_name, "")
         if val:
             setattr(cfg, field_name, str(val))
+
+    raw_reasoning_effort = data.get("model_reasoning_effort")
+    if raw_reasoning_effort is not None and str(raw_reasoning_effort):
+        reasoning_effort = str(raw_reasoning_effort)
+        if reasoning_effort not in _REASONING_EFFORT_VALUES:
+            valid_values = ", ".join(sorted(_REASONING_EFFORT_VALUES))
+            raise ConfigError(
+                "Config file: model_reasoning_effort must be one of "
+                f"{valid_values}. Got: {raw_reasoning_effort}"
+            )
+        cfg.model_reasoning_effort = reasoning_effort
 
     # settings_location
     cfg.settings_location = str(data.get("settings_location", ""))

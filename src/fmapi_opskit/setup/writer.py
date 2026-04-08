@@ -29,6 +29,8 @@ def write_settings(
     ai_gateway_enabled: bool,
     workspace_id: str,
     provider_id: str = "",
+    provider_name: str = "",
+    model_reasoning_effort: str = "",
 ) -> None:
     """Write/merge the settings file (JSON or TOML based on extension)."""
     log.heading("Writing settings")
@@ -44,6 +46,8 @@ def write_settings(
             model=model,
             ttl_ms=ttl_ms,
             provider_id=provider_id,
+            provider_name=provider_name,
+            model_reasoning_effort=model_reasoning_effort,
         )
     else:
         _write_json_settings(
@@ -92,6 +96,8 @@ def _write_toml_settings(
     model: str,
     ttl_ms: str,
     provider_id: str = "",
+    provider_name: str = "",
+    model_reasoning_effort: str = "",
 ) -> None:
     """Write/merge the TOML config.toml file for Codex."""
     from fmapi_opskit.agents.codex import (
@@ -103,17 +109,19 @@ def _write_toml_settings(
     from fmapi_opskit.settings.toml_manager import TomlSettingsManager
 
     resolved_id = provider_id or PROVIDER_ID
+    resolved_name = provider_name or PROVIDER_NAME
     mgr = TomlSettingsManager(Path(settings_file))
     mgr.merge_provider(
         provider_id=resolved_id,
-        provider_name=PROVIDER_NAME,
+        provider_name=resolved_name,
         base_url=base_url,
         wire_api=WIRE_API,
         auth_command=helper_file,
         refresh_interval_ms=int(ttl_ms),
         timeout_ms=AUTH_TIMEOUT_MS,
-        profile=resolved_id,
+        profile="default",
         model=model,
+        model_reasoning_effort=model_reasoning_effort,
     )
 
 

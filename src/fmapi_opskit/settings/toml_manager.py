@@ -50,6 +50,7 @@ class TomlSettingsManager:
         timeout_ms: int,
         profile: str,
         model: str,
+        model_reasoning_effort: str = "",
     ) -> None:
         """Merge a model provider block into config.toml.
 
@@ -83,6 +84,10 @@ class TomlSettingsManager:
         prof = profiles.setdefault(profile, {})
         prof["model_provider"] = provider_id
         prof["model"] = model
+        if model_reasoning_effort:
+            prof["model_reasoning_effort"] = model_reasoning_effort
+        else:
+            prof.pop("model_reasoning_effort", None)
 
         # Set up model_providers section
         providers = data.setdefault("model_providers", {})

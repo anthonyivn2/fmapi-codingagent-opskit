@@ -42,6 +42,7 @@ def do_setup(
     cli_host: str,
     cli_profile: str,
     cli_model: str,
+    cli_model_reasoning_effort: str,
     cli_opus: str,
     cli_sonnet: str,
     cli_haiku: str,
@@ -50,6 +51,7 @@ def do_setup(
     cli_ai_gateway: str,
     cli_workspace_id: str,
     cli_provider_id: str,
+    cli_provider_name: str,
     file_cfg: FileConfig,
     non_interactive: bool,
     dry_run: bool,
@@ -78,12 +80,16 @@ def do_setup(
             cli_profile = cli_profile or cfg.profile or c.default_profile
             cli_ttl = cli_ttl or cfg.ttl or "55"
             cli_model = cli_model or cfg.model or c.default_model
+            cli_model_reasoning_effort = (
+                cli_model_reasoning_effort or cfg.model_reasoning_effort or "high"
+            )
             cli_opus = cli_opus or cfg.opus or c.default_opus
             cli_sonnet = cli_sonnet or cfg.sonnet or c.default_sonnet
             cli_haiku = cli_haiku or cfg.haiku or c.default_haiku
             cli_ai_gateway = cli_ai_gateway or cfg.ai_gateway or "false"
             cli_workspace_id = cli_workspace_id or cfg.workspace_id or ""
             cli_provider_id = cli_provider_id or cfg.provider_id or ""
+            cli_provider_name = cli_provider_name or cfg.provider_name or ""
             if not cli_settings_location and cfg.settings_file:
                 cfg_base = cfg.settings_file.rsplit(f"/{c.settings_dir}/{c.settings_filename}", 1)[
                     0
@@ -103,7 +109,9 @@ def do_setup(
         cli_workspace_id=cli_workspace_id,
         cli_settings_location=cli_settings_location,
         cli_provider_id=cli_provider_id,
+        cli_provider_name=cli_provider_name,
         cli_model=cli_model,
+        cli_model_reasoning_effort=cli_model_reasoning_effort,
         cli_opus=cli_opus,
         cli_sonnet=cli_sonnet,
         cli_haiku=cli_haiku,
@@ -114,6 +122,7 @@ def do_setup(
         models = gather_config_models(
             gather,
             cli_model=cli_model,
+            cli_model_reasoning_effort=cli_model_reasoning_effort,
             cli_opus=cli_opus,
             cli_sonnet=cli_sonnet,
             cli_haiku=cli_haiku,
@@ -134,6 +143,7 @@ def do_setup(
             pending_workspace_id=gather.pending_workspace_id,
             script_dir=script_dir,
             provider_id=gather.provider_id,
+            provider_name=gather.provider_name,
         )
         sys.exit(0)
 
@@ -188,6 +198,7 @@ def do_setup(
     models = gather_config_models(
         gather,
         cli_model=cli_model,
+        cli_model_reasoning_effort=cli_model_reasoning_effort,
         cli_opus=cli_opus,
         cli_sonnet=cli_sonnet,
         cli_haiku=cli_haiku,
@@ -204,10 +215,12 @@ def do_setup(
         opus=models.opus,
         sonnet=models.sonnet,
         haiku=models.haiku,
+        model_reasoning_effort=models.model_reasoning_effort,
         ttl_ms=gather.ttl_ms,
         ai_gateway_enabled=gather.ai_gateway_enabled,
         workspace_id=workspace_id,
         provider_id=gather.provider_id,
+        provider_name=gather.provider_name,
     )
 
     adapter.ensure_onboarding()
@@ -247,6 +260,7 @@ def do_setup(
         opus=models.opus,
         sonnet=models.sonnet,
         haiku=models.haiku,
+        model_reasoning_effort=models.model_reasoning_effort,
         ttl_minutes=gather.ttl_minutes,
         ai_gateway_enabled=gather.ai_gateway_enabled,
         workspace_id=workspace_id,
@@ -296,6 +310,7 @@ def _print_summary(
     opus: str,
     sonnet: str,
     haiku: str,
+    model_reasoning_effort: str,
     ttl_minutes: str,
     ai_gateway_enabled: bool,
     workspace_id: str,
@@ -313,6 +328,8 @@ def _print_summary(
     console.print(f"  [dim]Workspace[/dim]  [bold]{host}[/bold]")
     console.print(f"  [dim]Profile[/dim]    [bold]{profile}[/bold]")
     console.print(f"  [dim]Model[/dim]      [bold]{model}[/bold]")
+    if model_reasoning_effort:
+        console.print(f"  [dim]Reasoning[/dim]  [bold]{model_reasoning_effort}[/bold]")
     if c.default_opus:
         console.print(f"  [dim]Opus[/dim]       [bold]{opus}[/bold]")
         console.print(f"  [dim]Sonnet[/dim]     [bold]{sonnet}[/bold]")

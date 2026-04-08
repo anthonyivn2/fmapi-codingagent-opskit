@@ -19,6 +19,8 @@ Databricks serves frontier and open-source LLMs through its [Foundation Model AP
 
 FMAPI supports all of the coding agents listed below. The CLI automates the configuration for each agent.
 
+For walkthroughs and deeper how-to docs, see the guides in `guide/`. For example, local install and development testing instructions live in `guide/local-testing.md`.
+
 | Coding Agent | CLI Command | Status |
 |---|---|---|
 | Claude Code | `setup-fmapi-claudecode` | Implemented |
