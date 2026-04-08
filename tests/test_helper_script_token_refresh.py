@@ -39,6 +39,17 @@ def _write_stub_binaries(bin_dir: Path) -> None:
     databricks_script = """#!/bin/sh
 set -eu
 
+printf '%s\n' "$*" >> "${FMAPI_TEST_STATE_DIR}/databricks.log"
+
+if [ "$1" = "--version" ]; then
+  if [ -f "${FMAPI_TEST_STATE_DIR}/databricks-version" ]; then
+    cat "${FMAPI_TEST_STATE_DIR}/databricks-version"
+  else
+    echo "Databricks CLI version 0.295.0"
+  fi
+  exit 0
+fi
+
 if [ "$1" = "auth" ] && [ "$2" = "token" ]; then
   _count_file="${FMAPI_TEST_STATE_DIR}/token-count"
   _count=0
@@ -174,3 +185,63 @@ def test_helper_refreshes_when_expires_in_is_float_string(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "refreshed-token"
     assert (state_dir / "token-count").read_text().strip() == "2"
+
+
+def test_helper_uses_force_refresh_when_cli_supports_it(tmp_path):
+    """Helper should prefer auth token --force-refresh when CLI supports it."""
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "databricks-version").write_text("Databricks CLI version 0.296.0\n")
+    (state_dir / "token-1.json").write_text('{"access_token": "stale-token", "expires_in": 30}')
+    (state_dir / "token-2.json").write_text(
+        '{"access_token": "refreshed-token", "expires_in": 3600}'
+    )
+
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "refreshed-token"
+    assert "--force-refresh" in (state_dir / "databricks.log").read_text()
+
+
+def test_helper_falls_back_without_force_refresh_on_older_cli(tmp_path):
+    """Helper should avoid --force-refresh when CLI version is below 0.296.0."""
+    helper_file = _render_helper_for_test(
+        tmp_path,
+        host="https://example.cloud.databricks.com",
+        profile="test-profile",
+    )
+
+    bin_dir = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    home_dir = tmp_path / "home"
+    bin_dir.mkdir()
+    state_dir.mkdir()
+    home_dir.mkdir()
+
+    _write_stub_binaries(bin_dir)
+    (state_dir / "databricks-version").write_text("Databricks CLI version 0.295.0\n")
+    (state_dir / "token-1.json").write_text('{"access_token": "stale-token", "expires_in": 30}')
+    (state_dir / "token-2.json").write_text(
+        '{"access_token": "refreshed-token", "expires_in": 3600}'
+    )
+
+    result = _run_helper(helper_file, home=home_dir, state_dir=state_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "refreshed-token"
+    log_text = (state_dir / "databricks.log").read_text()
+    assert "auth token --profile test-profile" in log_text
+    assert "--force-refresh" not in log_text

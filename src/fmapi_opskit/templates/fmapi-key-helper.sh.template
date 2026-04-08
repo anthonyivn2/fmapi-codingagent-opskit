@@ -148,6 +148,55 @@ _force_refresh_databricks_token_cache() {
   return 0
 }
 
+_databricks_cli_version() {
+  _dbx --version 2>/dev/null | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) {
+          print $i
+          exit
+        }
+      }
+    }
+  '
+}
+
+_version_ge() {
+  _left=$1
+  _right=$2
+
+  awk -v left="$_left" -v right="$_right" '
+    function part(v, idx, arr, n) {
+      n = split(v, arr, ".")
+      if (idx <= n && arr[idx] ~ /^[0-9]+$/) return arr[idx] + 0
+      return 0
+    }
+    BEGIN {
+      for (i = 1; i <= 3; i++) {
+        l = part(left, i)
+        r = part(right, i)
+        if (l > r) exit 0
+        if (l < r) exit 1
+      }
+      exit 0
+    }
+  '
+}
+
+_refresh_token_json() {
+  _dbx_version=$(_databricks_cli_version)
+  if [ -n "$_dbx_version" ] && _version_ge "$_dbx_version" "0.296.0"; then
+    _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --force-refresh --output json 2>/dev/null || true)
+    if [ -n "$_token_json" ]; then
+      printf '%s' "$_token_json"
+      return 0
+    fi
+  fi
+
+  _force_refresh_databricks_token_cache
+  _dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true
+}
+
 _fetch_token() {
   _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
   _token=$(_get_access_token "$_token_json")
@@ -155,9 +204,7 @@ _fetch_token() {
 
   _expires_in=$(_get_token_time_left "$_token_json")
   if _is_expiring_soon "$_expires_in"; then
-    _force_refresh_databricks_token_cache
-
-    _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
+    _token_json=$(_refresh_token_json)
     _token=$(_get_access_token "$_token_json")
     [ -n "$_token" ] || return 1
 
