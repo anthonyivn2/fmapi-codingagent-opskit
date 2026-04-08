@@ -8,7 +8,9 @@ VALID_CONFIG_KEYS = frozenset(
     {
         "host",
         "profile",
+        "provider_name",
         "model",
+        "model_reasoning_effort",
         "opus",
         "sonnet",
         "haiku",
@@ -33,6 +35,7 @@ class FmapiConfig:
 
     # From settings.json env block
     model: str = ""
+    model_reasoning_effort: str = ""
     opus: str = ""
     sonnet: str = ""
     haiku: str = ""
@@ -44,6 +47,7 @@ class FmapiConfig:
 
     # TOML provider/profile name (Codex only)
     provider_id: str = ""
+    provider_name: str = ""
 
     # File paths
     settings_file: str = ""
@@ -57,6 +61,7 @@ class FileConfig:
     host: str = ""
     profile: str = ""
     model: str = ""
+    model_reasoning_effort: str = ""
     opus: str = ""
     sonnet: str = ""
     haiku: str = ""
@@ -65,3 +70,4 @@ class FileConfig:
     ai_gateway: str = ""
     workspace_id: str = ""
     provider_id: str = ""
+    provider_name: str = ""

@@ -11,8 +11,8 @@ from fmapi_opskit.agents.base import AgentConfig
 from fmapi_opskit.ui import logging as log
 
 # Codex-specific TOML configuration constants
-PROVIDER_ID = "databricks_fmapi"
-PROVIDER_NAME = "Databricks FMAPI"
+PROVIDER_ID = "Databricks"
+PROVIDER_NAME = "Databricks AI Gateway"
 WIRE_API = "responses"
 AUTH_TIMEOUT_MS = 10000
 
@@ -40,7 +40,7 @@ CODEX_CONFIG = AgentConfig(
     helper_filename="fmapi-key-helper.sh",
     hook_precheck_filename="",
     # Defaults
-    default_profile="fmapi-codex-profile",
+    default_profile="default",
     default_model="databricks-gpt-5-2",
     default_opus="",
     default_sonnet="",
@@ -98,6 +98,10 @@ class CodexAdapter:
         model = default_prof.get("model", "")
         if model:
             result["model"] = model
+
+        model_reasoning_effort = default_prof.get("model_reasoning_effort", "")
+        if model_reasoning_effort:
+            result["model_reasoning_effort"] = model_reasoning_effort
 
         # Get TTL from provider auth refresh_interval_ms
         provider_id = default_prof.get("model_provider", PROVIDER_ID)

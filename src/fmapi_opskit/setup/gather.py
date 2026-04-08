@@ -43,8 +43,10 @@ class GatherResult:
         self.helper_file: str = ""
         # TOML provider/profile name (Codex only)
         self.provider_id: str = ""
+        self.provider_name: str = ""
         # Model defaults (for gather_config_models)
         self.default_model: str = ""
+        self.default_model_reasoning_effort: str = ""
         self.default_opus: str = ""
         self.default_sonnet: str = ""
         self.default_haiku: str = ""
@@ -62,7 +64,9 @@ def gather_config_pre_auth(
     cli_workspace_id: str,
     cli_settings_location: str,
     cli_provider_id: str,
+    cli_provider_name: str,
     cli_model: str,
+    cli_model_reasoning_effort: str,
     cli_opus: str,
     cli_sonnet: str,
     cli_haiku: str,
@@ -81,6 +85,12 @@ def gather_config_pre_auth(
 
     # Store model defaults for gather_config_models
     result.default_model = _first_non_empty(cli_model, file_cfg.model, cfg.model, c.default_model)
+    result.default_model_reasoning_effort = _first_non_empty(
+        cli_model_reasoning_effort,
+        file_cfg.model_reasoning_effort,
+        cfg.model_reasoning_effort,
+        "high",
+    )
     result.default_opus = _first_non_empty(cli_opus, file_cfg.opus, cfg.opus, c.default_opus)
     result.default_sonnet = _first_non_empty(
         cli_sonnet, file_cfg.sonnet, cfg.sonnet, c.default_sonnet
@@ -227,7 +237,7 @@ def gather_config_pre_auth(
             cli_provider_id, file_cfg.provider_id, cfg.provider_id, DEFAULT_PROVIDER_ID
         )
         result.provider_id = prompt_value(
-            "TOML profile & provider name",
+            "TOML provider id",
             cli_provider_id,
             default_provider_id,
             non_interactive,
@@ -242,6 +252,24 @@ def gather_config_pre_auth(
             )
             sys.exit(1)
 
+        from fmapi_opskit.agents.codex import PROVIDER_NAME as DEFAULT_PROVIDER_NAME
+
+        default_provider_name = _first_non_empty(
+            cli_provider_name,
+            file_cfg.provider_name,
+            cfg.provider_name,
+            DEFAULT_PROVIDER_NAME,
+        )
+        result.provider_name = prompt_value(
+            "TOML provider display name",
+            cli_provider_name,
+            default_provider_name,
+            non_interactive,
+        )
+        if not result.provider_name:
+            log.error("Provider display name is required.")
+            sys.exit(1)
+
     log.debug(f"gather: host={result.host} profile={result.profile}")
     log.debug(f"gather: settings={result.settings_file} helper={result.helper_file}")
 
@@ -253,9 +281,28 @@ class ModelResult:
 
     def __init__(self) -> None:
         self.model: str = ""
+        self.model_reasoning_effort: str = ""
         self.opus: str = ""
         self.sonnet: str = ""
         self.haiku: str = ""
+
+
+def _prompt_reasoning_effort(cli_val: str, default: str, non_interactive: bool) -> str:
+    """Prompt for Codex reasoning effort."""
+    allowed_values = ["minimal", "low", "medium", "high", "xhigh"]
+
+    if cli_val:
+        return cli_val
+    if non_interactive:
+        return default
+
+    default_index = allowed_values.index(default) if default in allowed_values else 0
+    choice = select_option(
+        "Model reasoning effort",
+        [(value, "") for value in allowed_values],
+        default_index=default_index,
+    )
+    return allowed_values[choice]
 
 
 def _normalize_available_models(available_models: list[str] | None) -> list[str]:
@@ -313,6 +360,7 @@ def gather_config_models(
     gather: GatherResult,
     *,
     cli_model: str,
+    cli_model_reasoning_effort: str,
     cli_opus: str,
     cli_sonnet: str,
     cli_haiku: str,
@@ -330,6 +378,13 @@ def gather_config_models(
         non_interactive,
         normalized_models,
     )
+
+    if not gather.default_opus:
+        result.model_reasoning_effort = _prompt_reasoning_effort(
+            cli_model_reasoning_effort,
+            gather.default_model_reasoning_effort,
+            non_interactive,
+        )
 
     # Only prompt for model tiers if the adapter supports them
     # (e.g., Claude Code has opus/sonnet/haiku; Codex has a single model)
@@ -357,7 +412,8 @@ def gather_config_models(
         )
 
     log.debug(
-        f"models: model={result.model} opus={result.opus} "
+        "models: "
+        f"model={result.model} reasoning={result.model_reasoning_effort} opus={result.opus} "
         f"sonnet={result.sonnet} haiku={result.haiku}"
     )
     return result

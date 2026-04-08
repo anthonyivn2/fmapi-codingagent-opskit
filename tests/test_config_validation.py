@@ -17,6 +17,27 @@ def test_load_valid_returns_correct_fields(config_file):
     assert cfg.ttl == "30", f"Unexpected ttl: {cfg.ttl}"
 
 
+def test_load_reasoning_effort_valid(tmp_path):
+    p = tmp_path / "reasoning.json"
+    p.write_text(json.dumps({"model_reasoning_effort": "high"}))
+    cfg = load_config_file(str(p))
+    assert cfg.model_reasoning_effort == "high"
+
+
+def test_load_reasoning_effort_xhigh_valid(tmp_path):
+    p = tmp_path / "reasoning_xhigh.json"
+    p.write_text(json.dumps({"model_reasoning_effort": "xhigh"}))
+    cfg = load_config_file(str(p))
+    assert cfg.model_reasoning_effort == "xhigh"
+
+
+def test_load_reasoning_effort_invalid_raises(tmp_path):
+    p = tmp_path / "reasoning_bad.json"
+    p.write_text(json.dumps({"model_reasoning_effort": "extreme"}))
+    with pytest.raises(ConfigError, match="model_reasoning_effort must be one of"):
+        load_config_file(str(p))
+
+
 def test_load_missing_path_raises(tmp_path):
     missing = tmp_path / "nope.json"
     with pytest.raises(ConfigError, match="not found"):

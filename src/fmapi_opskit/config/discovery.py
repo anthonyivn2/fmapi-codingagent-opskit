@@ -126,12 +126,14 @@ def _discover_from_toml(adapter: AgentAdapter, abs_path: Path) -> FmapiConfig:
         cfg.settings_file = str(abs_path)
         cfg.helper_file = command
         cfg.provider_id = provider_key
+        cfg.provider_name = str(provider.get("name", ""))
 
         _parse_helper_script(Path(command), cfg)
 
         # Read model and TTL from TOML structure
         env_vals = adapter.read_env(data)
         cfg.model = env_vals.get("model", "")
+        cfg.model_reasoning_effort = env_vals.get("model_reasoning_effort", "")
         cfg.ttl = env_vals.get("ttl", "")
 
         # Detect AI Gateway v2 from base_url

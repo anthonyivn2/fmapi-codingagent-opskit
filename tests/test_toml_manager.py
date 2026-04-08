@@ -81,28 +81,30 @@ def test_exists(mgr):
 
 def test_merge_provider_creates_config(mgr):
     mgr.merge_provider(
-        provider_id="databricks_fmapi",
-        provider_name="Databricks FMAPI",
+        provider_id="Databricks",
+        provider_name="Databricks AI Gateway",
         base_url="https://example.com/serving-endpoints/openai/v1",
         wire_api="responses",
         auth_command="/path/to/fmapi-key-helper.sh",
         refresh_interval_ms=3300000,
         timeout_ms=10000,
-        profile="databricks_fmapi",
+        profile="default",
         model="databricks-gpt-5-2",
+        model_reasoning_effort="high",
     )
 
     data = mgr.read()
-    assert data["profile"] == "databricks_fmapi"
-    assert data["profiles"]["databricks_fmapi"]["model_provider"] == "databricks_fmapi"
-    assert data["profiles"]["databricks_fmapi"]["model"] == "databricks-gpt-5-2"
-    assert data["model_providers"]["databricks_fmapi"]["name"] == "Databricks FMAPI"
-    assert data["model_providers"]["databricks_fmapi"]["wire_api"] == "responses"
-    assert data["model_providers"]["databricks_fmapi"]["auth"]["command"] == (
+    assert data["profile"] == "default"
+    assert data["profiles"]["default"]["model_provider"] == "Databricks"
+    assert data["profiles"]["default"]["model"] == "databricks-gpt-5-2"
+    assert data["profiles"]["default"]["model_reasoning_effort"] == "high"
+    assert data["model_providers"]["Databricks"]["name"] == "Databricks AI Gateway"
+    assert data["model_providers"]["Databricks"]["wire_api"] == "responses"
+    assert data["model_providers"]["Databricks"]["auth"]["command"] == (
         "/path/to/fmapi-key-helper.sh"
     )
-    assert data["model_providers"]["databricks_fmapi"]["auth"]["refresh_interval_ms"] == 3300000
-    assert data["model_providers"]["databricks_fmapi"]["auth"]["timeout_ms"] == 10000
+    assert data["model_providers"]["Databricks"]["auth"]["refresh_interval_ms"] == 3300000
+    assert data["model_providers"]["Databricks"]["auth"]["timeout_ms"] == 10000
 
 
 def test_merge_provider_preserves_existing_sections(mgr):
@@ -116,8 +118,9 @@ def test_merge_provider_preserves_existing_sections(mgr):
         auth_command="/path/to/fmapi-key-helper.sh",
         refresh_interval_ms=3300000,
         timeout_ms=10000,
-        profile="databricks_fmapi",
+        profile="Databricks",
         model="test-model",
+        model_reasoning_effort="high",
     )
 
     data = mgr.read()
@@ -135,8 +138,9 @@ def test_merge_provider_updates_existing(mgr):
         auth_command="/old/fmapi-key-helper.sh",
         refresh_interval_ms=100,
         timeout_ms=5000,
-        profile="databricks_fmapi",
+        profile="Databricks",
         model="old-model",
+        model_reasoning_effort="low",
     )
     mgr.merge_provider(
         provider_id="databricks_fmapi",
@@ -146,8 +150,9 @@ def test_merge_provider_updates_existing(mgr):
         auth_command="/new/fmapi-key-helper.sh",
         refresh_interval_ms=3300000,
         timeout_ms=10000,
-        profile="databricks_fmapi",
+        profile="Databricks",
         model="new-model",
+        model_reasoning_effort="high",
     )
 
     data = mgr.read()
@@ -155,7 +160,67 @@ def test_merge_provider_updates_existing(mgr):
     assert data["model_providers"]["databricks_fmapi"]["auth"]["command"] == (
         "/new/fmapi-key-helper.sh"
     )
-    assert data["profiles"]["databricks_fmapi"]["model"] == "new-model"
+    assert data["profiles"]["Databricks"]["model"] == "new-model"
+    assert data["profiles"]["Databricks"]["model_reasoning_effort"] == "high"
+
+
+def test_merge_provider_removes_stale_fmapi_profile_for_same_provider(mgr):
+    """Reinstall should remove stale FMAPI profiles even when provider_id changes are partial."""
+    mgr.write(
+        {
+            "profile": "databricks_fmapi",
+            "profiles": {
+                "databricks_fmapi": {
+                    "model_provider": "databricks_fmapi",
+                    "model": "old-model",
+                },
+                "default": {
+                    "model_provider": "databricks",
+                    "model": "older-default-model",
+                },
+            },
+            "model_providers": {
+                "databricks_fmapi": {
+                    "name": "Databricks FMAPI",
+                    "base_url": "https://old.example.com/openai/v1",
+                    "wire_api": "responses",
+                    "auth": {
+                        "command": "/path/to/fmapi-key-helper.sh",
+                        "refresh_interval_ms": 3300000,
+                        "timeout_ms": 10000,
+                    },
+                },
+                "databricks": {
+                    "name": "Databricks FMAPI",
+                    "base_url": "https://old.example.com/openai/v1",
+                    "wire_api": "responses",
+                    "auth": {
+                        "command": "/path/to/fmapi-key-helper.sh",
+                        "refresh_interval_ms": 3300000,
+                        "timeout_ms": 10000,
+                    },
+                },
+            },
+        }
+    )
+
+    mgr.merge_provider(
+        provider_id="Databricks",
+        provider_name="Databricks AI Gateway",
+        base_url="https://new.example.com/openai/v1",
+        wire_api="responses",
+        auth_command="/path/to/fmapi-key-helper.sh",
+        refresh_interval_ms=1800000,
+        timeout_ms=5000,
+        profile="default",
+        model="gpt-5.4",
+        model_reasoning_effort="high",
+    )
+
+    data = mgr.read()
+    assert data["profile"] == "default"
+    assert list(data["profiles"].keys()) == ["default"]
+    assert list(data["model_providers"].keys()) == ["Databricks"]
 
 
 def test_merge_provider_cleans_up_old_fmapi_name(mgr):
@@ -384,6 +449,62 @@ def test_remove_provider_preserves_non_fmapi_with_custom_id(mgr):
     assert "my_fmapi" not in data.get("profiles", {})
     assert "profile" not in data  # top-level profile pointed to removed profile
     assert data["model_providers"]["openai"]["name"] == "OpenAI"
+
+
+def test_remove_provider_cleans_mixed_legacy_and_new_codex_entries(mgr):
+    """Uninstall should remove mixed FMAPI providers/profiles created across schema changes."""
+    mgr.write(
+        {
+            "profile": "databricks_fmapi",
+            "projects": {
+                "/Users/test/project": {"trust_level": "trusted"},
+            },
+            "profiles": {
+                "databricks_fmapi": {
+                    "model_provider": "databricks_fmapi",
+                    "model": "databricks-gpt-5-4",
+                    "model_reasoning_effort": "xhigh",
+                },
+                "default": {
+                    "model_provider": "databricks",
+                    "model": "databricks-gpt-5-4",
+                },
+            },
+            "model_providers": {
+                "databricks_fmapi": {
+                    "name": "Databricks FMAPI",
+                    "base_url": "https://example.ai-gateway.cloud.databricks.com/openai/v1",
+                    "wire_api": "responses",
+                    "auth": {
+                        "command": "/Users/test/.codex/fmapi-key-helper.sh",
+                        "refresh_interval_ms": 3300000,
+                        "timeout_ms": 10000,
+                    },
+                },
+                "databricks": {
+                    "name": "Databricks FMAPI",
+                    "base_url": "https://example.ai-gateway.cloud.databricks.com/openai/v1",
+                    "wire_api": "responses",
+                    "auth": {
+                        "command": "/Users/test/.codex/fmapi-key-helper.sh",
+                        "refresh_interval_ms": 3300000,
+                        "timeout_ms": 10000,
+                    },
+                },
+            },
+        }
+    )
+
+    deleted = mgr.remove_fmapi_provider()
+    assert deleted is False
+
+    data = mgr.read()
+    assert "databricks_fmapi" not in data.get("model_providers", {})
+    assert "databricks" not in data.get("model_providers", {})
+    assert "databricks_fmapi" not in data.get("profiles", {})
+    assert "default" not in data.get("profiles", {})
+    assert "profile" not in data
+    assert data["projects"]["/Users/test/project"]["trust_level"] == "trusted"
 
 
 def test_remove_provider_no_fmapi_returns_false(mgr):

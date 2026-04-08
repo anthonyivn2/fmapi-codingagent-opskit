@@ -25,15 +25,16 @@ def codex_config():
 def sample_codex_toml_data() -> dict:
     """Return a parsed TOML config dict matching the Codex schema."""
     return {
-        "profile": "databricks_fmapi",
+        "profile": "default",
         "profiles": {
-            "databricks_fmapi": {
-                "model_provider": "databricks_fmapi",
+            "default": {
+                "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
+                "model_reasoning_effort": "high",
             }
         },
         "model_providers": {
-            "databricks_fmapi": {
+            "Databricks": {
                 "name": "Databricks FMAPI",
                 "base_url": "https://example.com/serving-endpoints/openai/v1",
                 "wire_api": "responses",
@@ -99,6 +100,11 @@ def test_read_env_extracts_model(codex_adapter, sample_codex_toml_data):
 def test_read_env_extracts_ttl(codex_adapter, sample_codex_toml_data):
     result = codex_adapter.read_env(sample_codex_toml_data)
     assert result["ttl"] == "55", f"Expected '55' (3300000ms / 60000), got '{result.get('ttl')}'"
+
+
+def test_read_env_extracts_reasoning_effort(codex_adapter, sample_codex_toml_data):
+    result = codex_adapter.read_env(sample_codex_toml_data)
+    assert result["model_reasoning_effort"] == "high"
 
 
 def test_read_env_empty_settings(codex_adapter):
@@ -186,16 +192,16 @@ def test_discover_config_finds_toml(tmp_path):
     config_file = config_dir / "config.toml"
 
     toml_data = {
-        "profile": "databricks_fmapi",
+        "profile": "default",
         "profiles": {
-            "databricks_fmapi": {
-                "model_provider": "databricks_fmapi",
+            "default": {
+                "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
             }
         },
         "model_providers": {
-            "databricks_fmapi": {
-                "name": "Databricks FMAPI",
+            "Databricks": {
+                "name": "Databricks AI Gateway",
                 "base_url": "https://example.com/serving-endpoints/openai/v1",
                 "wire_api": "responses",
                 "auth": {
@@ -222,7 +228,8 @@ def test_discover_config_finds_toml(tmp_path):
     assert cfg.host == "https://example.com"
     assert cfg.profile == "test-profile"
     assert cfg.settings_file == str(config_file)
-    assert cfg.provider_id == "databricks_fmapi"
+    assert cfg.provider_id == "Databricks"
+    assert cfg.provider_name == "Databricks AI Gateway"
 
 
 def test_discover_config_custom_provider_id(tmp_path):

@@ -98,6 +98,13 @@ def main(
         str | None, typer.Option("--profile", help="Databricks CLI profile name.")
     ] = None,
     model: Annotated[str | None, typer.Option("--model", help="Primary model.")] = None,
+    model_reasoning_effort: Annotated[
+        str | None,
+        typer.Option(
+            "--model-reasoning-effort",
+            help="Codex model reasoning effort: minimal, low, medium, high, or xhigh.",
+        ),
+    ] = None,
     opus: Annotated[str | None, typer.Option("--opus", help="Opus model.")] = None,
     sonnet: Annotated[str | None, typer.Option("--sonnet", help="Sonnet model.")] = None,
     haiku: Annotated[str | None, typer.Option("--haiku", help="Haiku model.")] = None,
@@ -125,7 +132,11 @@ def main(
     ] = None,
     provider_id: Annotated[
         str | None,
-        typer.Option("--provider-id", help="TOML profile & provider name (Codex only)."),
+        typer.Option("--provider-id", help="TOML provider id (Codex only)."),
+    ] = None,
+    provider_name: Annotated[
+        str | None,
+        typer.Option("--provider-name", help="TOML provider display name (Codex only)."),
     ] = None,
 ) -> None:
     """Configure a coding agent to use Databricks Foundation Model API."""
@@ -188,6 +199,7 @@ def main(
             "cli_host": host or "",
             "cli_profile": profile or "",
             "cli_model": model or "",
+            "cli_model_reasoning_effort": model_reasoning_effort or "",
             "cli_opus": opus or "",
             "cli_sonnet": sonnet or "",
             "cli_haiku": haiku or "",
@@ -196,6 +208,7 @@ def main(
             "cli_ai_gateway": "true" if ai_gateway else "",
             "cli_workspace_id": workspace_id or "",
             "cli_provider_id": provider_id or "",
+            "cli_provider_name": provider_name or "",
         }
     )
 
@@ -209,6 +222,7 @@ def main(
             cli_host=host or "",
             cli_profile=profile or "",
             cli_model=model or "",
+            cli_model_reasoning_effort=model_reasoning_effort or "",
             cli_opus=opus or "",
             cli_sonnet=sonnet or "",
             cli_haiku=haiku or "",
@@ -217,6 +231,7 @@ def main(
             cli_ai_gateway="true" if ai_gateway else "",
             cli_workspace_id=workspace_id or "",
             cli_provider_id=provider_id or "",
+            cli_provider_name=provider_name or "",
             file_cfg=file_cfg,
             non_interactive=non_interactive,
             dry_run=dry_run,
@@ -359,6 +374,7 @@ def reinstall(
         cli_host=cfg.host,
         cli_profile=cfg.profile or c.default_profile,
         cli_model=cfg.model or c.default_model,
+        cli_model_reasoning_effort=cfg.model_reasoning_effort or "high",
         cli_opus=cfg.opus or c.default_opus,
         cli_sonnet=cfg.sonnet or c.default_sonnet,
         cli_haiku=cfg.haiku or c.default_haiku,
@@ -367,6 +383,7 @@ def reinstall(
         cli_ai_gateway=cfg.ai_gateway or "false",
         cli_workspace_id=cfg.workspace_id or "",
         cli_provider_id=cfg.provider_id or "",
+        cli_provider_name=cfg.provider_name or "",
         file_cfg=FileConfig(),
         non_interactive=True,
         dry_run=False,

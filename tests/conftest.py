@@ -42,6 +42,7 @@ def sample_config_data() -> dict:
         "host": "https://example.cloud.databricks.com",
         "profile": "test-profile",
         "model": "databricks-claude-opus-4-6",
+        "model_reasoning_effort": "high",
         "ttl": "30",
     }
 
