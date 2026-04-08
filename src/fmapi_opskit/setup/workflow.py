@@ -147,7 +147,7 @@ def do_setup(
         )
         sys.exit(0)
 
-    install_dependencies(adapter, platform_info)
+    install_dependencies(adapter, platform_info, non_interactive=non_interactive)
     authenticate(gather.host, gather.profile)
     cleanup_legacy_cache(gather.settings_file.rsplit(f"/{c.settings_dir}", 1)[0])
 
