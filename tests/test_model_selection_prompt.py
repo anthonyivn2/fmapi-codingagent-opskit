@@ -35,6 +35,7 @@ def test_model_selection_allows_custom_last_option(monkeypatch):
     result = gather_config_models(
         gather,
         cli_model="",
+        cli_model_reasoning_effort="",
         cli_opus="cli-opus",
         cli_sonnet="cli-sonnet",
         cli_haiku="cli-haiku",
@@ -75,6 +76,7 @@ def test_model_selection_defaults_to_current_model_when_available(monkeypatch):
     result = gather_config_models(
         gather,
         cli_model="",
+        cli_model_reasoning_effort="",
         cli_opus="cli-opus",
         cli_sonnet="cli-sonnet",
         cli_haiku="cli-haiku",
@@ -99,6 +101,7 @@ def test_model_selection_falls_back_to_text_prompt_without_available_models(monk
     result = gather_config_models(
         gather,
         cli_model="",
+        cli_model_reasoning_effort="",
         cli_opus="",
         cli_sonnet="",
         cli_haiku="",

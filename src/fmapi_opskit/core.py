@@ -217,9 +217,9 @@ def install_hint(cmd: str, platform_info: PlatformInfo, agent_config: AgentConfi
             if is_linux:
                 return (
                     "curl -fsSL "
-                    "https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh"
+                    "https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- --version 0.296.0"
                 )
-            return "brew tap databricks/tap && brew install databricks"
+            return "brew tap databricks/tap && brew install databricks@0.296.0"
         case "curl":
             if is_linux:
                 return "sudo apt-get install -y curl  (or sudo yum install -y curl)"

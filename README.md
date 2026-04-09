@@ -514,8 +514,8 @@ If any model shows **WARN** (exists but not READY), the endpoint may be provisio
 
 The Databricks CLI is not installed or not on your `PATH`. Setup installs it automatically, but if that failed:
 
-- **macOS:** `brew install databricks`
-- **Linux:** `curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh`
+- **macOS:** `brew tap databricks/tap && brew install databricks@0.296.0`
+- **Linux:** `curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- --version 0.296.0`
 
 Then re-run setup.
 

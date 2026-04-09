@@ -71,14 +71,18 @@ def _discover_from_json(adapter: AgentAdapter, abs_path: Path) -> FmapiConfig:
         return cfg
 
     helper = settings.get("apiKeyHelper", "")
-    if not helper:
+    if not isinstance(helper, str) or not helper:
         return cfg
+
+    helper_path = Path(helper).expanduser()
+    if not helper_path.is_absolute():
+        helper_path = (abs_path.parent / helper_path).resolve()
 
     cfg.found = True
     cfg.settings_file = str(abs_path)
-    cfg.helper_file = helper
+    cfg.helper_file = str(helper_path)
 
-    _parse_helper_script(Path(helper), cfg)
+    _parse_helper_script(helper_path, cfg)
 
     # Parse model names and TTL from settings.json env block
     env_vals = adapter.read_env(settings)
