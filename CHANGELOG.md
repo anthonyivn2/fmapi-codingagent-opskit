@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-09
+
+### Fixed
+
+- Used Databricks CLI force-refresh support during helper-driven token refresh when available.
+- Resolved relative `apiKeyHelper` paths correctly during Codex config discovery.
+
+### Changed
+
+- Pinned Databricks CLI installs to `0.296.0`.
+
 ## [0.1.2] - 2026-04-04
 
 ### Added
@@ -80,7 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy PAT cleanup and migration from prior installations
 - Stale OAuth token recovery with automatic cache repair
 
-[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/releases/tag/v0.1.0
