@@ -17,6 +17,22 @@ success() { echo -e "  ${GREEN}${BOLD}ok${RESET} $1"; }
 warn()    { echo -e "  ${YELLOW}${BOLD}!!${RESET}${YELLOW} $1${RESET}"; }
 error()   { echo -e "\n  ${RED}${BOLD}!! ERROR${RESET}${RED} $1${RESET}\n" >&2; }
 
+CLI_COMMANDS=("setup-fmapi-codex" "setup-fmapi-claudecode")
+
+_print_cli_commands() {
+  local cli
+  for cli in "${CLI_COMMANDS[@]}"; do
+    echo -e "    ${CYAN}${cli}${RESET}"
+  done
+}
+
+_print_cli_examples() {
+  local cli="$1"
+  echo -e "    ${CYAN}${cli}${RESET}"
+  echo -e "    ${CYAN}${cli} --host https://your-workspace.cloud.databricks.com${RESET}"
+  echo -e "    ${CYAN}${cli} self-update${RESET}"
+}
+
 _is_tag_ref() {
   local repo="$1"
   local ref="$2"
@@ -53,17 +69,23 @@ _checkout_ref() {
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-# Detect existing FMAPI config in ~/.claude/settings.json
+# Detect existing FMAPI config in agent settings
 _has_fmapi_config() {
-  local settings="$HOME/.claude/settings.json"
-  [[ -f "$settings" ]] || return 1
+  local claude_settings="$HOME/.claude/settings.json"
+  local codex_settings="$HOME/.codex/config.toml"
+
+  if [[ -f "$codex_settings" ]]; then
+    grep -q "fmapi-key-helper\.sh\|databricks_fmapi\|model_providers" "$codex_settings" 2>/dev/null && return 0
+  fi
+
+  [[ -f "$claude_settings" ]] || return 1
   if command -v jq &>/dev/null; then
     local helper=""
-    helper=$(jq -r '.apiKeyHelper // empty' "$settings" 2>/dev/null) || true
+    helper=$(jq -r '.apiKeyHelper // empty' "$claude_settings" 2>/dev/null) || true
     [[ -n "$helper" ]] && return 0
     return 1
   fi
-  grep -q "apiKeyHelper" "$settings" 2>/dev/null
+  grep -q "apiKeyHelper" "$claude_settings" 2>/dev/null
 }
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
@@ -206,18 +228,18 @@ else
 fi
 
 # ── Install CLI as global tool ───────────────────────────────────────────────
-info "Installing setup-fmapi-claudecode CLI ..."
+info "Installing CLIs ..."
 # Ensure uv tool bin is on PATH for this session
 UV_TOOL_BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
 export PATH="${UV_TOOL_BIN_DIR}:$PATH"
 
 uv tool install "$INSTALL_DIR" --force --reinstall --no-cache --quiet 2>/dev/null || \
   uv tool install "$INSTALL_DIR" --force --reinstall --no-cache
-success "CLI installed globally as setup-fmapi-claudecode."
+success "CLIs installed globally as setup-fmapi-codex and setup-fmapi-claudecode."
 
 # Check if the tool bin directory is on the user's default PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$UV_TOOL_BIN_DIR" 2>/dev/null || \
-   ! command -v setup-fmapi-claudecode &>/dev/null; then
+   ! command -v setup-fmapi-codex &>/dev/null; then
   echo ""
   echo -e "  ${RED}${BOLD}NOTE:${RESET} ${UV_TOOL_BIN_DIR} may not be on your PATH."
   echo -e "  Add it to your shell profile to use the CLI in new terminals:"
@@ -231,33 +253,33 @@ fi
 echo ""
 success "fmapi-codingagent-setup v${local_version} installed to ${INSTALL_DIR}"
 echo ""
-echo -e "  ${BOLD}Next steps:${RESET}"
-echo ""
-echo -e "  Run setup for Claude Code:"
-echo -e "    ${CYAN}setup-fmapi-claudecode${RESET}"
+echo -e "  ${BOLD}Available CLI commands:${RESET}"
+_print_cli_commands
 
 echo ""
-echo -e "  Run non-interactive setup (example):"
-echo -e "    ${CYAN}setup-fmapi-claudecode --host https://your-workspace.cloud.databricks.com${RESET}"
+echo -e "  ${BOLD}Hint format:${RESET}"
+echo -e "    ${DIM}<cli-command>${RESET}"
+echo -e "    ${DIM}<cli-command> --host https://your-workspace.cloud.databricks.com${RESET}"
+echo -e "    ${DIM}<cli-command> self-update${RESET}"
 
 echo ""
-echo -e "  Update to the latest version:"
-echo -e "    ${CYAN}setup-fmapi-claudecode self-update${RESET}"
+echo -e "  ${BOLD}Example using setup-fmapi-codex:${RESET}"
+_print_cli_examples "setup-fmapi-codex"
 
 # ── Reinstall hint (update + existing config) ─────────────────────────────────
 if [[ "$IS_UPDATE" == true ]] && _has_fmapi_config; then
   echo ""
   echo -e "  ${BOLD}Already configured?${RESET} If needed, re-run refresh manually:"
-  echo -e "    ${CYAN}setup-fmapi-claudecode reinstall${RESET}"
+  echo -e "    ${DIM}<cli-command>${RESET} ${CYAN}reinstall${RESET}"
 fi
 
 # ── Installation files hint ───────────────────────────────────────────────────
 echo ""
 echo -e "  ${DIM}Installation files:${RESET}"
 echo -e "    ${DIM}Repository clone  ${INSTALL_DIR}${RESET}"
-echo -e "    ${DIM}CLI tool          ${UV_TOOL_BIN_DIR}/setup-fmapi-claudecode${RESET}"
+echo -e "    ${DIM}CLI tools         ${UV_TOOL_BIN_DIR}/setup-fmapi-codex, ${UV_TOOL_BIN_DIR}/setup-fmapi-claudecode${RESET}"
 echo ""
 echo -e "  ${DIM}To uninstall everything later:${RESET}"
-echo -e "    ${DIM}setup-fmapi-claudecode uninstall${RESET}"
+echo -e "    ${DIM}<cli-command>${RESET} ${CYAN}uninstall${RESET}"
 
 echo ""
