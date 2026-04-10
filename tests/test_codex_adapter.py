@@ -25,9 +25,9 @@ def codex_config():
 def sample_codex_toml_data() -> dict:
     """Return a parsed TOML config dict matching the Codex schema."""
     return {
-        "profile": "default",
+        "profile": "codinggateway-codex-profile",
         "profiles": {
-            "default": {
+            "codinggateway-codex-profile": {
                 "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
                 "model_reasoning_effort": "high",
@@ -142,7 +142,7 @@ def test_read_env_legacy_default_profile(codex_adapter):
     data = {
         "profiles": {"default": {"model": "legacy-model", "model_provider": "databricks"}},
         "model_providers": {
-            "databricks": {
+                "databricks": {
                 "auth": {"command": "/path/helper.sh", "refresh_interval_ms": 1800000}
             }
         },
@@ -192,9 +192,9 @@ def test_discover_config_finds_toml(tmp_path):
     config_file = config_dir / "config.toml"
 
     toml_data = {
-        "profile": "default",
+        "profile": "codinggateway-codex-profile",
         "profiles": {
-            "default": {
+            "codinggateway-codex-profile": {
                 "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
             }
@@ -285,7 +285,7 @@ def test_discover_config_toml_no_fmapi(tmp_path):
     config_file = config_dir / "config.toml"
 
     toml_data = {
-        "profiles": {"default": {"model_provider": "openai", "model": "gpt-4"}},
+        "profiles": {"codinggateway-codex-profile": {"model_provider": "openai", "model": "gpt-4"}},
         "model_providers": {"openai": {"name": "OpenAI", "base_url": "https://api.openai.com"}},
     }
     config_file.write_bytes(tomli_w.dumps(toml_data).encode())

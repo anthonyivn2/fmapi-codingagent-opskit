@@ -23,15 +23,15 @@ def mgr(toml_path):
 def sample_toml_content() -> str:
     """Valid TOML content matching the Codex FMAPI schema."""
     return (
-        'profile = "databricks_fmapi"\n\n'
-        "[profiles.databricks_fmapi]\n"
-        'model_provider = "databricks_fmapi"\n'
+        'profile = "codinggateway-codex-profile"\n\n'
+        "[profiles.codinggateway-codex-profile]\n"
+        'model_provider = "Databricks"\n'
         'model = "databricks-gpt-5-2"\n\n'
-        "[model_providers.databricks_fmapi]\n"
+        "[model_providers.Databricks]\n"
         'name = "Databricks FMAPI"\n'
         'base_url = "https://example.com/serving-endpoints/openai/v1"\n'
         'wire_api = "responses"\n\n'
-        "[model_providers.databricks_fmapi.auth]\n"
+        "[model_providers.Databricks.auth]\n"
         'command = "/home/user/.codex/fmapi-key-helper.sh"\n'
         "refresh_interval_ms = 3300000\n"
         "timeout_ms = 10000\n"
@@ -52,10 +52,10 @@ def test_read_corrupt_toml_returns_empty(toml_path, mgr):
 
 
 def test_write_read_roundtrip(mgr):
-    data = {"profiles": {"default": {"model": "test-model"}}}
+    data = {"profiles": {"codinggateway-codex-profile": {"model": "test-model"}}}
     mgr.write(data)
     result = mgr.read()
-    assert result["profiles"]["default"]["model"] == "test-model"
+    assert result["profiles"]["codinggateway-codex-profile"]["model"] == "test-model"
 
 
 def test_write_creates_parent_dirs(toml_path, mgr):
@@ -88,16 +88,16 @@ def test_merge_provider_creates_config(mgr):
         auth_command="/path/to/fmapi-key-helper.sh",
         refresh_interval_ms=3300000,
         timeout_ms=10000,
-        profile="default",
+        profile="codinggateway-codex-profile",
         model="databricks-gpt-5-2",
         model_reasoning_effort="high",
     )
 
     data = mgr.read()
-    assert data["profile"] == "default"
-    assert data["profiles"]["default"]["model_provider"] == "Databricks"
-    assert data["profiles"]["default"]["model"] == "databricks-gpt-5-2"
-    assert data["profiles"]["default"]["model_reasoning_effort"] == "high"
+    assert data["profile"] == "codinggateway-codex-profile"
+    assert data["profiles"]["codinggateway-codex-profile"]["model_provider"] == "Databricks"
+    assert data["profiles"]["codinggateway-codex-profile"]["model"] == "databricks-gpt-5-2"
+    assert data["profiles"]["codinggateway-codex-profile"]["model_reasoning_effort"] == "high"
     assert data["model_providers"]["Databricks"]["name"] == "Databricks AI Gateway"
     assert data["model_providers"]["Databricks"]["wire_api"] == "responses"
     assert data["model_providers"]["Databricks"]["auth"]["command"] == (
@@ -174,7 +174,7 @@ def test_merge_provider_removes_stale_fmapi_profile_for_same_provider(mgr):
                     "model_provider": "databricks_fmapi",
                     "model": "old-model",
                 },
-                "default": {
+                "codinggateway-codex-profile": {
                     "model_provider": "databricks",
                     "model": "older-default-model",
                 },
@@ -212,14 +212,14 @@ def test_merge_provider_removes_stale_fmapi_profile_for_same_provider(mgr):
         auth_command="/path/to/fmapi-key-helper.sh",
         refresh_interval_ms=1800000,
         timeout_ms=5000,
-        profile="default",
+        profile="codinggateway-codex-profile",
         model="gpt-5.4",
         model_reasoning_effort="high",
     )
 
     data = mgr.read()
-    assert data["profile"] == "default"
-    assert list(data["profiles"].keys()) == ["default"]
+    assert data["profile"] == "codinggateway-codex-profile"
+    assert list(data["profiles"].keys()) == ["codinggateway-codex-profile"]
     assert list(data["model_providers"].keys()) == ["Databricks"]
 
 
@@ -465,7 +465,7 @@ def test_remove_provider_cleans_mixed_legacy_and_new_codex_entries(mgr):
                     "model": "databricks-gpt-5-4",
                     "model_reasoning_effort": "xhigh",
                 },
-                "default": {
+                "codinggateway-codex-profile": {
                     "model_provider": "databricks",
                     "model": "databricks-gpt-5-4",
                 },
@@ -502,7 +502,7 @@ def test_remove_provider_cleans_mixed_legacy_and_new_codex_entries(mgr):
     assert "databricks_fmapi" not in data.get("model_providers", {})
     assert "databricks" not in data.get("model_providers", {})
     assert "databricks_fmapi" not in data.get("profiles", {})
-    assert "default" not in data.get("profiles", {})
+    assert "codinggateway-codex-profile" not in data.get("profiles", {})
     assert "profile" not in data
     assert data["projects"]["/Users/test/project"]["trust_level"] == "trusted"
 
