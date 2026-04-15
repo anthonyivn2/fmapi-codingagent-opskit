@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-15
+
+### Changed
+
+- Refined installer CLI hints to make setup guidance clearer.
+- Renamed default Databricks CLI profiles for Codex and Claude Code to use clearer agent-specific defaults.
+
+### Fixed
+
+- Always force-refresh Claude helper tokens before returning credentials.
+- Resolved relative Codex helper paths correctly during config discovery.
+
 ## [0.1.3] - 2026-04-09
 
 ### Fixed
@@ -91,7 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy PAT cleanup and migration from prior installations
 - Stale OAuth token recovery with automatic cache repair
 
-[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/anthonyivn2/fmapi-codingagent-opskit/compare/v0.1.0...v0.1.1

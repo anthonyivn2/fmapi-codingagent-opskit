@@ -1,7 +1,7 @@
 {
   "name": "fmapi-codingagent",
   "description": "Manage Claude Code integration with Databricks Foundation Model API",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "author": { "name": "Databricks" },
   "skills": "./skills/"
 }
