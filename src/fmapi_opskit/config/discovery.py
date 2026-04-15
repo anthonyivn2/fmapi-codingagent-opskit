@@ -126,13 +126,17 @@ def _discover_from_toml(adapter: AgentAdapter, abs_path: Path) -> FmapiConfig:
         if not (command and "fmapi-key-helper" in command):
             continue
 
+        helper_path = Path(command).expanduser()
+        if not helper_path.is_absolute():
+            helper_path = (abs_path.parent / helper_path).resolve()
+
         cfg.found = True
         cfg.settings_file = str(abs_path)
-        cfg.helper_file = command
+        cfg.helper_file = str(helper_path)
         cfg.provider_id = provider_key
         cfg.provider_name = str(provider.get("name", ""))
 
-        _parse_helper_script(Path(command), cfg)
+        _parse_helper_script(helper_path, cfg)
 
         # Read model and TTL from TOML structure
         env_vals = adapter.read_env(data)
