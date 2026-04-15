@@ -8,7 +8,7 @@ def test_discovery_resolves_relative_json_helper_path(tmp_path):
 
     helper_path = settings_dir / "fmapi-key-helper.sh"
     helper_path.write_text(
-        'FMAPI_PROFILE="fmapi-claudecode-profile"\n'
+        'FMAPI_PROFILE="codinggateway-claudecode-profile"\n'
         'FMAPI_HOST="https://workspace.cloud.databricks.com"\n'
         'echo "token"\n'
     )
@@ -26,5 +26,5 @@ def test_discovery_resolves_relative_json_helper_path(tmp_path):
 
     assert cfg.found is True
     assert cfg.host == "https://workspace.cloud.databricks.com"
-    assert cfg.profile == "fmapi-claudecode-profile"
+    assert cfg.profile == "codinggateway-claudecode-profile"
     assert cfg.helper_file == str(helper_path.resolve())

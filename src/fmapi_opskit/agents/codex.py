@@ -40,7 +40,7 @@ CODEX_CONFIG = AgentConfig(
     helper_filename="fmapi-key-helper.sh",
     hook_precheck_filename="",
     # Defaults
-    default_profile="default",
+    default_profile="codinggateway-codex-profile",
     default_model="databricks-gpt-5-2",
     default_opus="",
     default_sonnet="",
@@ -89,7 +89,7 @@ class CodexAdapter:
 
         # Get model from active profile, with fallback to legacy "default"
         profiles = settings.get("profiles", {})
-        active = settings.get("profile", "databricks_fmapi")
+        active = settings.get("profile", "codinggateway-codex-profile")
         default_prof = (
             profiles.get(active, {})
             or profiles.get("databricks_fmapi", {})

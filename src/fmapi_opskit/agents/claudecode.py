@@ -33,7 +33,7 @@ CLAUDE_CODE_CONFIG = AgentConfig(
     helper_filename="fmapi-key-helper.sh",
     hook_precheck_filename="fmapi-auth-precheck.sh",
     # Defaults
-    default_profile="fmapi-claudecode-profile",
+    default_profile="codinggateway-claudecode-profile",
     default_model="databricks-claude-opus-4-6",
     default_opus="databricks-claude-opus-4-6",
     default_sonnet="databricks-claude-sonnet-4-6",

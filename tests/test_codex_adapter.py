@@ -25,9 +25,9 @@ def codex_config():
 def sample_codex_toml_data() -> dict:
     """Return a parsed TOML config dict matching the Codex schema."""
     return {
-        "profile": "default",
+        "profile": "codinggateway-codex-profile",
         "profiles": {
-            "default": {
+            "codinggateway-codex-profile": {
                 "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
                 "model_reasoning_effort": "high",
@@ -142,7 +142,7 @@ def test_read_env_legacy_default_profile(codex_adapter):
     data = {
         "profiles": {"default": {"model": "legacy-model", "model_provider": "databricks"}},
         "model_providers": {
-            "databricks": {
+                "databricks": {
                 "auth": {"command": "/path/helper.sh", "refresh_interval_ms": 1800000}
             }
         },
@@ -192,9 +192,9 @@ def test_discover_config_finds_toml(tmp_path):
     config_file = config_dir / "config.toml"
 
     toml_data = {
-        "profile": "default",
+        "profile": "codinggateway-codex-profile",
         "profiles": {
-            "default": {
+            "codinggateway-codex-profile": {
                 "model_provider": "Databricks",
                 "model": "databricks-gpt-5-2",
             }
@@ -285,7 +285,7 @@ def test_discover_config_toml_no_fmapi(tmp_path):
     config_file = config_dir / "config.toml"
 
     toml_data = {
-        "profiles": {"default": {"model_provider": "openai", "model": "gpt-4"}},
+        "profiles": {"codinggateway-codex-profile": {"model_provider": "openai", "model": "gpt-4"}},
         "model_providers": {"openai": {"name": "OpenAI", "base_url": "https://api.openai.com"}},
     }
     config_file.write_bytes(tomli_w.dumps(toml_data).encode())
@@ -334,3 +334,50 @@ def test_discover_config_toml_gateway(tmp_path):
     assert cfg.found is True
     assert cfg.ai_gateway == "true"
     assert cfg.workspace_id == "99999"
+
+
+def test_discover_config_resolves_relative_toml_helper_path(tmp_path):
+    """discover_config should resolve relative auth.command paths for Codex TOML."""
+    adapter = CodexAdapter()
+
+    config_dir = tmp_path / ".codex"
+    config_dir.mkdir()
+    config_file = config_dir / "config.toml"
+
+    toml_data = {
+        "profile": "codinggateway-codex-profile",
+        "profiles": {
+            "codinggateway-codex-profile": {
+                "model_provider": "Databricks",
+                "model": "databricks-gpt-5-2",
+            }
+        },
+        "model_providers": {
+            "Databricks": {
+                "name": "Databricks AI Gateway",
+                "base_url": "https://example.com/serving-endpoints/openai/v1",
+                "wire_api": "responses",
+                "auth": {
+                    "command": "./fmapi-key-helper.sh",
+                    "refresh_interval_ms": 3300000,
+                    "timeout_ms": 10000,
+                },
+            }
+        },
+    }
+    config_file.write_bytes(tomli_w.dumps(toml_data).encode())
+
+    helper_path = config_dir / "fmapi-key-helper.sh"
+    helper_path.write_text(
+        "#!/bin/sh\n"
+        "FMAPI_HOST=\"https://example.com\"\n"
+        "FMAPI_PROFILE=\"test-profile\"\n"
+    )
+
+    with patch.object(adapter, "settings_candidates", return_value=[config_file]):
+        cfg = discover_config(adapter)
+
+    assert cfg.found is True
+    assert cfg.helper_file == str(helper_path.resolve())
+    assert cfg.host == "https://example.com"
+    assert cfg.profile == "test-profile"
