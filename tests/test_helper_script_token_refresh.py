@@ -187,8 +187,8 @@ def test_helper_refreshes_when_expires_in_is_float_string(tmp_path):
     assert (state_dir / "token-count").read_text().strip() == "2"
 
 
-def test_helper_uses_force_refresh_when_cli_supports_it(tmp_path):
-    """Helper should prefer auth token --force-refresh when CLI supports it."""
+def test_helper_always_uses_force_refresh_when_cli_supports_it(tmp_path):
+    """Helper should use auth token --force-refresh on every invocation when supported."""
     helper_file = _render_helper_for_test(
         tmp_path,
         host="https://example.cloud.databricks.com",
@@ -204,8 +204,10 @@ def test_helper_uses_force_refresh_when_cli_supports_it(tmp_path):
 
     _write_stub_binaries(bin_dir)
     (state_dir / "databricks-version").write_text("Databricks CLI version 0.296.0\n")
-    (state_dir / "token-1.json").write_text('{"access_token": "stale-token", "expires_in": 30}')
-    (state_dir / "token-2.json").write_text(
+    (state_dir / "token-1.json").write_text(
+        '{"access_token": "refreshed-token", "expires_in": 3600}'
+    )
+    (state_dir / "token-default.json").write_text(
         '{"access_token": "refreshed-token", "expires_in": 3600}'
     )
 
@@ -213,7 +215,8 @@ def test_helper_uses_force_refresh_when_cli_supports_it(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "refreshed-token"
-    assert "--force-refresh" in (state_dir / "databricks.log").read_text()
+    log_text = (state_dir / "databricks.log").read_text()
+    assert "auth token --profile test-profile --force-refresh --output json" in log_text
 
 
 def test_helper_falls_back_without_force_refresh_on_older_cli(tmp_path):
@@ -233,8 +236,10 @@ def test_helper_falls_back_without_force_refresh_on_older_cli(tmp_path):
 
     _write_stub_binaries(bin_dir)
     (state_dir / "databricks-version").write_text("Databricks CLI version 0.295.0\n")
-    (state_dir / "token-1.json").write_text('{"access_token": "stale-token", "expires_in": 30}')
-    (state_dir / "token-2.json").write_text(
+    (state_dir / "token-1.json").write_text(
+        '{"access_token": "refreshed-token", "expires_in": 3600}'
+    )
+    (state_dir / "token-default.json").write_text(
         '{"access_token": "refreshed-token", "expires_in": 3600}'
     )
 

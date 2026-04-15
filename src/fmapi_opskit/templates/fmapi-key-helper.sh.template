@@ -183,9 +183,13 @@ _version_ge() {
   '
 }
 
-_refresh_token_json() {
+_cli_supports_force_refresh() {
   _dbx_version=$(_databricks_cli_version)
-  if [ -n "$_dbx_version" ] && _version_ge "$_dbx_version" "0.296.0"; then
+  [ -n "$_dbx_version" ] && _version_ge "$_dbx_version" "0.296.0"
+}
+
+_refresh_token_json() {
+  if _cli_supports_force_refresh; then
     _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --force-refresh --output json 2>/dev/null || true)
     if [ -n "$_token_json" ]; then
       printf '%s' "$_token_json"
@@ -198,7 +202,11 @@ _refresh_token_json() {
 }
 
 _fetch_token() {
-  _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
+  if _cli_supports_force_refresh; then
+    _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --force-refresh --output json 2>/dev/null || true)
+  else
+    _token_json=$(_dbx auth token --profile "$FMAPI_PROFILE" --output json 2>/dev/null || true)
+  fi
   _token=$(_get_access_token "$_token_json")
   [ -n "$_token" ] || return 1
 
